@@ -293,6 +293,7 @@ Command behavior:
 The local wrapper treats capabilities as provider/source modules:
 
 - Provider: GitHub Copilot is mandatory for every Hermes run.
+- Model: Hermes is pinned to `gpt-5.4` through `config/hermes.config.yaml`.
 - Source: Jira/JSM provides tickets and incident workflow through MCP.
 - Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh` and bundled GitHub skills.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
