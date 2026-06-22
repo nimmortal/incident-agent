@@ -34,10 +34,10 @@ RUN mkdir -p /tmp/cx-skills "${HERMES_SKILLS_SEED_HOME}/.hermes/skills" \
   && cp -R /home/agent/.hermes/skills/github/github-pr-workflow "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
   && cp -R /home/agent/.hermes/skills/github/github-repo-management "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/"
 
-COPY src ./src
-COPY config ./config
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --omit=dev
+COPY src ./src
+COPY config ./config
 
 RUN mkdir -p /home/agent/.hermes /app/data
 

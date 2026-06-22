@@ -148,11 +148,36 @@ JIRA_MCP_URL=http://host.docker.internal:9000/mcp
 ## Running Without Docker
 
 This is useful for fast CLI iteration, but the host must already have Hermes,
-Node 24+, `gh`, `cx`, and the Coralogix Hermes skills installed.
+Node 24+, `gh`, `cx`, and the required Hermes skills installed. The wrapper
+launches Hermes with `HOME=HERMES_RUNTIME_HOME`, so host-installed skills under
+your normal `~/.hermes` are not visible unless you seed them into the runtime
+home.
 
 ```bash
 npm install
 npm run check
+HERMES_SKILLS_SEED_HOME="$HOME" npm run doctor
+HERMES_SKILLS_SEED_HOME="$HOME" npm run agent -- ask "Check whether service api had errors in the last 30 minutes"
+```
+
+Install the Coralogix skills into your normal host skill directory first:
+
+```bash
+npx skills add coralogix/cx-cli \
+  --agent github-copilot \
+  --skill cx-telemetry-querying \
+  --skill cx-incident-management \
+  --copy \
+  -y
+```
+
+The Docker image already includes Hermes' bundled GitHub skills. For host mode,
+verify that `npm run doctor` reports all expected seed skills as `found` before
+using GitHub or Coralogix commands.
+
+For Copilot-only prompt tests that do not need source skills:
+
+```bash
 npm run doctor
 npm run agent -- ask "Check whether service api had errors in the last 30 minutes"
 ```
@@ -223,9 +248,9 @@ Hermes can then call `gh` without relying on an interactive login session.
 
 For Coralogix access, the container has `cx` installed and the image build
 installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills
-into an image seed profile. Before each Hermes run, the wrapper copies missing
-seeded skills into `HERMES_RUNTIME_HOME/.hermes/skills`, so the skills remain
-available even when `./data` is bind-mounted.
+into an image seed profile. Before each Hermes run, the wrapper refreshes
+image-managed skills in `HERMES_RUNTIME_HOME/.hermes/skills`, so image rebuilds
+roll out skill updates even when `./data` is bind-mounted.
 
 ## Commands
 
@@ -271,8 +296,9 @@ fail before starting Hermes.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
-feature registry, and seeds image-installed Hermes skills into the runtime
-Hermes home if they are missing.
+feature registry, refreshes image-installed Hermes skills in the runtime Hermes
+home, and checks required CLI binaries plus preloaded skills before starting
+Hermes.
 
 ## Investigation State
 

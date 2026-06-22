@@ -47,5 +47,22 @@ export class HermesRunner {
 }
 
 function withoutQueryFlag(args: string[]): string[] {
-  return args.filter((arg) => arg !== "-q" && arg !== "--query");
+  const normalized: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "-q" || arg === "--query") {
+      const next = args[index + 1];
+      if (next && !next.startsWith("-")) {
+        index += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith("--query=")) {
+      continue;
+    }
+    normalized.push(arg);
+  }
+
+  return normalized;
 }

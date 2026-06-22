@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import { runtimeConfigPath, runtimeHome } from "./hermes-config.ts";
+import { hasHermesSkill, runtimeConfigPath, runtimeHome, runtimeSkillsPath, skillsSeedPath } from "./hermes-config.ts";
+import { managedSkills } from "./skill-sets.ts";
 
 function main(): void {
   const settings = loadSettings();
@@ -20,9 +21,14 @@ function main(): void {
   );
   console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
   console.log(`- runtime home: ${runtimeHome(settings)}`);
-  console.log(
-    `- bundled skill seed: ${existsSync(settings.hermesSkillsSeedHome) ? "found" : "missing"} (${settings.hermesSkillsSeedHome})`,
-  );
+  console.log(`- runtime skills path: ${runtimeSkillsPath(settings)}`);
+
+  const seedPath = skillsSeedPath(settings);
+  console.log(`- bundled skill seed: ${existsSync(seedPath) ? "found" : "missing"} (${seedPath})`);
+  for (const skill of managedSkills) {
+    const state = hasHermesSkill(seedPath, skill) ? "found" : "missing";
+    console.log(`  - ${skill}: ${state}`);
+  }
 
   console.log("\nHermes:");
   const result = spawnSync(settings.hermesBin, ["--version"], {

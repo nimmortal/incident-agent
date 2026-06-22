@@ -1,7 +1,8 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
+import { managedSkills } from "./skill-sets.ts";
 
 export function buildHermesEnvironment(settings: Settings): NodeJS.ProcessEnv {
   writeRuntimeConfig(settings);
@@ -16,8 +17,44 @@ export function runtimeConfigPath(settings: Settings): string {
   return join(runtimeHome(settings), ".hermes", "config.yaml");
 }
 
+export function runtimeSkillsPath(settings: Settings): string {
+  return join(runtimeHome(settings), ".hermes", "skills");
+}
+
 export function runtimeHome(settings: Settings): string {
   return resolve(settings.hermesRuntimeHome);
+}
+
+export function skillsSeedPath(settings: Settings): string {
+  return join(resolve(settings.hermesSkillsSeedHome), ".hermes", "skills");
+}
+
+export function hasHermesSkill(skillsPath: string, skillName: string): boolean {
+  return findHermesSkillPath(skillsPath, skillName) !== undefined;
+}
+
+function findHermesSkillPath(skillsPath: string, skillName: string): string | undefined {
+  if (!existsSync(skillsPath)) {
+    return undefined;
+  }
+
+  const directPath = join(skillsPath, skillName, "SKILL.md");
+  if (existsSync(directPath)) {
+    return join(skillsPath, skillName);
+  }
+
+  for (const entry of readdirSync(skillsPath, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const found = findHermesSkillPath(join(skillsPath, entry.name), skillName);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
 }
 
 function writeRuntimeConfig(settings: Settings): void {
@@ -31,25 +68,23 @@ function writeRuntimeConfig(settings: Settings): void {
 }
 
 function seedHermesSkills(settings: Settings): void {
-  const sourceDir = join(resolve(settings.hermesSkillsSeedHome), ".hermes", "skills");
+  const sourceDir = skillsSeedPath(settings);
   if (!existsSync(sourceDir)) {
     return;
   }
 
-  const targetDir = join(runtimeHome(settings), ".hermes", "skills");
+  const targetDir = runtimeSkillsPath(settings);
   mkdirSync(targetDir, { recursive: true });
 
-  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) {
+  for (const skill of managedSkills) {
+    const sourcePath = findHermesSkillPath(sourceDir, skill);
+    if (!sourcePath) {
       continue;
     }
 
-    const targetPath = join(targetDir, entry.name);
-    if (existsSync(targetPath)) {
-      continue;
-    }
-
-    cpSync(join(sourceDir, entry.name), targetPath, { recursive: true });
+    const targetPath = join(targetDir, skill);
+    rmSync(targetPath, { recursive: true, force: true });
+    cpSync(sourcePath, targetPath, { recursive: true });
   }
 }
 
