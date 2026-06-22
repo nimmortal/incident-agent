@@ -2,12 +2,12 @@ import { spawnSync } from "node:child_process";
 
 import type { Settings } from "./config.ts";
 import { hasHermesSkill, runtimeSkillsPath } from "./hermes-config.ts";
-import { coralogixSkills, githubSkills, postgresSkills } from "./skill-sets.ts";
+import { coralogixSkills, githubSkillNames, postgresSkills, skillName } from "./skill-sets.ts";
 
 export function requireRuntimeForSkills(settings: Settings, skills: string[]): void {
   const missing: string[] = [];
 
-  if (skills.some((skill) => githubSkills.includes(skill as (typeof githubSkills)[number])) && !commandExists("gh")) {
+  if (skills.some((skill) => githubSkillNames.includes(skillName(skill) as (typeof githubSkillNames)[number])) && !commandExists("gh")) {
     missing.push("gh CLI");
   }
   if (skills.some((skill) => coralogixSkills.includes(skill as (typeof coralogixSkills)[number])) && !commandExists("cx")) {

@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
-import { managedSkills } from "./skill-sets.ts";
+import { managedSkillTargets } from "./skill-sets.ts";
 
 export function buildHermesEnvironment(settings: Settings): NodeJS.ProcessEnv {
   writeRuntimeConfig(settings);
@@ -81,14 +81,17 @@ function seedHermesSkills(settings: Settings): void {
   const targetDir = runtimeSkillsPath(settings);
   mkdirSync(targetDir, { recursive: true });
 
-  for (const skill of managedSkills) {
-    const sourcePath = findHermesSkillPath(sourceDir, skill) ?? findHermesSkillPath(localDir, skill);
+  for (const skill of managedSkillTargets) {
+    const sourcePath = findHermesSkillPath(sourceDir, skill.name) ?? findHermesSkillPath(localDir, skill.name);
     if (!sourcePath) {
       continue;
     }
 
-    const targetPath = join(targetDir, skill);
+    const staleFlatPath = join(targetDir, skill.name);
+    const targetPath = join(targetDir, skill.target);
+    rmSync(staleFlatPath, { recursive: true, force: true });
     rmSync(targetPath, { recursive: true, force: true });
+    mkdirSync(dirname(targetPath), { recursive: true });
     cpSync(sourcePath, targetPath, { recursive: true });
   }
 }

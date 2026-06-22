@@ -29,10 +29,11 @@ RUN mkdir -p /tmp/cx-skills "${HERMES_SKILLS_SEED_HOME}/.hermes/skills" \
   && cp -R .agents/skills/cx-telemetry-querying "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
   && cp -R .agents/skills/cx-incident-management "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
   && rm -rf /tmp/cx-skills \
-  && cp -R /home/agent/.hermes/skills/github/github-auth "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
-  && cp -R /home/agent/.hermes/skills/github/github-issues "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
-  && cp -R /home/agent/.hermes/skills/github/github-pr-workflow "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
-  && cp -R /home/agent/.hermes/skills/github/github-repo-management "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/"
+  && mkdir -p "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github" \
+  && cp -R /home/agent/.hermes/skills/github/github-auth "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/" \
+  && cp -R /home/agent/.hermes/skills/github/github-issues "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/" \
+  && cp -R /home/agent/.hermes/skills/github/github-pr-workflow "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/" \
+  && cp -R /home/agent/.hermes/skills/github/github-repo-management "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/"
 
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --omit=dev
