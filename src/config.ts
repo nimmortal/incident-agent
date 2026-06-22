@@ -1,23 +1,37 @@
-import { existsSync, readFileSync } from "node:fs";
+import dotenv from "dotenv";
+import { cleanEnv, num, str } from "envalid";
+import { z } from "zod";
 
-export interface Settings {
-  jiraProjectKey: string;
-  jiraJql: string;
-  jiraPollIntervalSeconds: number;
-  jiraPollBatchSize: number;
-  hermesBin: string;
-  hermesArgs: string[];
-  hermesTimeoutSeconds: number;
-  investigatingLabel: string;
-  investigatedLabel: string;
-  failedLabel: string;
-}
+const settingsSchema = z.object({
+  jiraProjectKey: z.string().min(1),
+  jiraJql: z.string().min(1),
+  jiraPollIntervalSeconds: z.number().int().positive(),
+  jiraPollBatchSize: z.number().int().positive(),
+  hermesBin: z.string().min(1),
+  hermesArgs: z.array(z.string().min(1)),
+  hermesTimeoutSeconds: z.number().int().positive(),
+  investigatingLabel: z.string().min(1),
+  investigatedLabel: z.string().min(1),
+  failedLabel: z.string().min(1),
+});
+
+export type Settings = z.infer<typeof settingsSchema>;
 
 export function loadSettings(): Settings {
   loadEnvFile(".env.local");
   loadEnvFile(".env");
 
-  const jiraProjectKey = env("JIRA_PROJECT_KEY", "JSM");
+  const env = cleanEnv(process.env, {
+    JIRA_PROJECT_KEY: str({ default: "JSM" }),
+    JIRA_JQL: str({ default: "" }),
+    JIRA_POLL_INTERVAL_SECONDS: num({ default: 300 }),
+    JIRA_POLL_BATCH_SIZE: num({ default: 3 }),
+    HERMES_BIN: str({ default: "hermes" }),
+    HERMES_ARGS: str({ default: "chat --quiet -q" }),
+    HERMES_TIMEOUT_SECONDS: num({ default: 900 }),
+  });
+
+  const jiraProjectKey = env.JIRA_PROJECT_KEY;
   const defaultJql = [
     `project = ${jiraProjectKey}`,
     "AND statusCategory != Done",
@@ -25,71 +39,26 @@ export function loadSettings(): Settings {
     "ORDER BY created ASC",
   ].join(" ");
 
-  return {
+  return settingsSchema.parse({
     jiraProjectKey,
-    jiraJql: env("JIRA_JQL", defaultJql),
-    jiraPollIntervalSeconds: numberEnv("JIRA_POLL_INTERVAL_SECONDS", 300),
-    jiraPollBatchSize: numberEnv("JIRA_POLL_BATCH_SIZE", 3),
-    hermesBin: env("HERMES_BIN", "hermes"),
-    hermesArgs: splitArgs(env("HERMES_ARGS", "chat --quiet -q")),
-    hermesTimeoutSeconds: numberEnv("HERMES_TIMEOUT_SECONDS", 900),
+    jiraJql: env.JIRA_JQL || defaultJql,
+    jiraPollIntervalSeconds: env.JIRA_POLL_INTERVAL_SECONDS,
+    jiraPollBatchSize: env.JIRA_POLL_BATCH_SIZE,
+    hermesBin: env.HERMES_BIN,
+    hermesArgs: splitArgs(env.HERMES_ARGS),
+    hermesTimeoutSeconds: env.HERMES_TIMEOUT_SECONDS,
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",
     failedLabel: "ai-investigation-failed",
-  };
+  });
 }
 
 export function validateSettings(settings: Settings): void {
-  if (!settings.hermesBin) {
-    throw new Error("Missing HERMES_BIN");
-  }
+  settingsSchema.parse(settings);
 }
 
 function loadEnvFile(path: string): void {
-  if (!existsSync(path)) {
-    return;
-  }
-
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, key, rawValue] = match;
-    if (process.env[key] !== undefined) {
-      continue;
-    }
-    process.env[key] = unquote(rawValue.trim());
-  }
-}
-
-function env(name: string, fallback = ""): string {
-  return process.env[name] ?? fallback;
-}
-
-function numberEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) {
-    return fallback;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value)) {
-    throw new Error(`${name} must be a number`);
-  }
-  return value;
-}
-
-function unquote(value: string): string {
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    return value.slice(1, -1);
-  }
-  return value;
+  dotenv.config({ path, override: false, quiet: true });
 }
 
 function splitArgs(value: string): string[] {
