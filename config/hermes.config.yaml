@@ -1,0 +1,24 @@
+model:
+  provider: "copilot"
+
+mcp_servers:
+  jira:
+    url: "${JIRA_MCP_URL}"
+    headers:
+      Authorization: "Bearer ${JIRA_MCP_TOKEN}"
+    enabled: true
+    timeout: 120
+    tools:
+      resources: false
+      prompts: false
+
+  coralogix:
+    url: "https://api.${CORALOGIX_DOMAIN}/mgmt/api/v1/mcp"
+    headers:
+      Authorization: "Bearer ${CORALOGIX_API_KEY}"
+      mcp-version: "v2"
+    enabled: true
+    timeout: 120
+    tools:
+      resources: false
+      prompts: false

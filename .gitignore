@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime state
+data/
+
+# Build and coverage output
+dist/
+coverage/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/

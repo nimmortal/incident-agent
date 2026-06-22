@@ -1,0 +1,79 @@
+import type { Settings } from "./config.ts";
+
+export function freeformPrompt(request: string): string {
+  return [
+    baseInstructions(),
+    "",
+    "User request:",
+    request,
+  ].join("\n");
+}
+
+export function jiraTicketPrompt(issueKey: string): string {
+  return [
+    baseInstructions(),
+    "",
+    `Use Jira MCP to inspect Jira/JSM ticket ${issueKey}.`,
+    "Summarize the ticket, current status, customer impact, relevant comments, linked issues, and what information is missing for investigation.",
+  ].join("\n");
+}
+
+export function logsPrompt(query: string, window?: string): string {
+  return [
+    baseInstructions(),
+    "",
+    "Use Coralogix MCP to investigate logs, metrics, and traces.",
+    window ? `Time window: ${window}` : "If no time window is obvious, ask for one or state the assumed window clearly.",
+    "",
+    "Investigation request:",
+    query,
+  ].join("\n");
+}
+
+export function incidentPrompt(issueKey: string): string {
+  return [
+    baseInstructions(),
+    "",
+    `Investigate incident ticket ${issueKey}.`,
+    "",
+    "Required workflow:",
+    "1. Use Jira MCP to read the ticket, comments, links, status, labels, and customer impact.",
+    "2. Use Coralogix MCP to inspect relevant logs, metrics, traces, alerts, and error signatures.",
+    "3. Use GitHub CLI or GitHub MCP tools to inspect recent deployments, commits, PRs, and workflow runs if they may be relevant.",
+    "4. Post no public customer response unless explicitly asked. If writing to Jira, use an internal/private note.",
+    "5. Produce an evidence-backed RCA draft with confidence and follow-up actions.",
+  ].join("\n");
+}
+
+export function pollPrompt(settings: Settings): string {
+  return [
+    baseInstructions(),
+    "",
+    "Run one polling cycle for new Jira/JSM incident tickets.",
+    "",
+    "Use Jira MCP only for Jira/JSM operations. Do not call Jira REST directly.",
+    `Find up to ${settings.jiraPollBatchSize} tickets with this JQL:`,
+    settings.jiraJql,
+    "",
+    "For each matching ticket:",
+    `1. If it already has label ${settings.investigatedLabel} or ${settings.investigatingLabel}, skip it.`,
+    `2. Claim it by adding label ${settings.investigatingLabel}.`,
+    "3. Add an internal/private Jira note saying AI investigation started.",
+    "4. Investigate using Jira MCP, Coralogix MCP, and GitHub CLI/MCP tools.",
+    "5. Add an internal/private RCA comment with summary, timeline, evidence, likely root cause, confidence, mitigations, follow-up actions, and open questions.",
+    `6. On success, add label ${settings.investigatedLabel} and remove ${settings.investigatingLabel}.`,
+    `7. On failure, add label ${settings.failedLabel}, remove ${settings.investigatingLabel}, and include the failure reason in your final output.`,
+    "",
+    "Return a concise run summary listing every ticket considered and the action taken.",
+  ].join("\n");
+}
+
+function baseInstructions(): string {
+  return [
+    "You are an incident investigation agent.",
+    "Use available MCP tools and CLI tools. Prefer tool evidence over assumptions.",
+    "Keep actions read-only except Jira/JSM labels and internal/private investigation comments when explicitly required by the workflow.",
+    "Do not invent evidence. Cite concrete timestamps, query terms, issue keys, commit SHAs, workflow names, and links where available.",
+    "Separate direct root cause, contributing factors, and unrelated noise.",
+  ].join("\n");
+}

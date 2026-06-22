@@ -1,0 +1,21 @@
+{
+  "name": "incident-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "agent": "tsx src/agent-cli.ts",
+    "doctor": "tsx src/doctor.ts",
+    "investigate": "tsx src/agent-cli.ts investigate",
+    "poll": "tsx src/poller.ts",
+    "check": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "tsx": "^4.22.4"
+  }
+}
