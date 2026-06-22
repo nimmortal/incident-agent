@@ -4,7 +4,7 @@ import { requireFeatures, type FeatureId } from "./features.ts";
 import { buildHermesEnvironment } from "./hermes-config.ts";
 import { HermesRunner } from "./hermes-runner.ts";
 import { freeformPrompt, incidentPrompt, jiraTicketPrompt, logsPrompt, pollPrompt } from "./prompts.ts";
-import { requireRuntimeForSkills } from "./runtime-preflight.ts";
+import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { coralogixSkills, optionalSourceSkills, skillArgs } from "./skill-sets.ts";
 
 interface Runtime {
@@ -18,9 +18,12 @@ async function main(): Promise<void> {
   const runPrompt = async (prompt: string, requiredFeatures: FeatureId[] = [], skills: string[] = []): Promise<void> => {
     const { hermes, settings } = getRuntime();
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
+    requireCopilotTokenSupported();
     requireRuntimeForSkills(settings, skills);
     const result = await hermes.run(prompt, skillArgs(skills));
-    console.log(result);
+    if (result) {
+      console.log(result);
+    }
   };
 
   const getRuntime = (): Runtime => {

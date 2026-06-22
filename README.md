@@ -226,7 +226,13 @@ docker compose run --rm incident-agent npm run agent -- poll-once
 
 ## Required Secrets
 
-- `COPILOT_GITHUB_TOKEN`: token Hermes uses for GitHub Copilot.
+- `COPILOT_GITHUB_TOKEN`: Copilot-compatible token Hermes uses for GitHub Copilot. Classic GitHub PATs (`ghp_*`) are not supported by Copilot API endpoints.
+
+Supported Copilot token options:
+
+- OAuth/device-flow token (`gho_*`), for example from `hermes model` or Copilot login flows.
+- GitHub App token (`ghu_*`).
+- Fine-grained PAT (`github_pat_*`) with Copilot Requests permission.
 
 Required only for Jira/JSM commands:
 

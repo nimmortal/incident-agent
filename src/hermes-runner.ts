@@ -10,13 +10,14 @@ export class HermesRunner {
 
   run(prompt: string, extraArgs: string[] = []): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.binary, [...withoutQueryFlag(this.args), ...extraArgs, "-q", prompt], {
+      const args = [...withoutQueryFlag(this.args), ...extraArgs, "-q", prompt];
+      console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
+
+      const child = spawn(this.binary, args, {
         env: this.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
 
-      let stdout = "";
-      let stderr = "";
       const timeout = setTimeout(() => {
         child.kill("SIGTERM");
         reject(new Error(`Hermes timed out after ${this.timeoutSeconds} seconds`));
@@ -25,10 +26,10 @@ export class HermesRunner {
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk) => {
-        stdout += chunk;
+        process.stdout.write(chunk);
       });
       child.stderr.on("data", (chunk) => {
-        stderr += chunk;
+        process.stderr.write(chunk);
       });
       child.on("error", (error) => {
         clearTimeout(timeout);
@@ -37,10 +38,10 @@ export class HermesRunner {
       child.on("close", (code) => {
         clearTimeout(timeout);
         if (code !== 0) {
-          reject(new Error(`Hermes exited with code ${code}.\n\nstderr:\n${stderr.trim()}\n\nstdout:\n${stdout.trim()}`));
+          reject(new Error(`Hermes exited with code ${code}. Output was streamed above.`));
           return;
         }
-        resolve(stdout.trim() || stderr.trim());
+        resolve("");
       });
     });
   }
@@ -65,4 +66,25 @@ function withoutQueryFlag(args: string[]): string[] {
   }
 
   return normalized;
+}
+
+function displayCommand(binary: string, args: string[]): string {
+  const redacted: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    redacted.push(arg);
+    if (arg === "-q" || arg === "--query") {
+      if (args[index + 1]) {
+        redacted.push("<prompt>");
+        index += 1;
+      }
+    }
+  }
+
+  return [binary, ...redacted].map(shellish).join(" ");
+}
+
+function shellish(value: string): string {
+  return /^[A-Za-z0-9_./:=,@+-]+$/.test(value) ? value : JSON.stringify(value);
 }

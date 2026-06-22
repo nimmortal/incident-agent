@@ -6,7 +6,7 @@ import { loadSettings, validateSettings, type Settings } from "./config.ts";
 import { requireFeatures } from "./features.ts";
 import { buildHermesEnvironment, runtimeConfigPath } from "./hermes-config.ts";
 import { pollPrompt } from "./prompts.ts";
-import { requireRuntimeForSkills } from "./runtime-preflight.ts";
+import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { optionalSourceSkills } from "./skill-sets.ts";
 
 const POLL_JOB_NAME = "incident-agent-jira-poll";
@@ -30,6 +30,7 @@ function main(): void {
   const settings = loadSettings();
   validateSettings(settings);
   requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
+  requireCopilotTokenSupported();
 
   const skills = optionalSourceSkills(settings);
   const env = buildHermesEnvironment(settings);
@@ -150,31 +151,43 @@ function sameStrings(left: string[], right: string[]): boolean {
 }
 
 function runHermes(settings: Settings, env: NodeJS.ProcessEnv, args: string[], action: string): void {
+  console.error(`[incident-agent] Running Hermes to ${action}: ${displayCommand(settings.hermesBin, args)}`);
+
   const result = spawnSync(settings.hermesBin, args, {
     env,
     encoding: "utf8",
-    stdio: action === "start Hermes gateway" ? "inherit" : "pipe",
+    stdio: "inherit",
   });
 
   if (result.error) {
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(
-      [
-        `Failed to ${action}: ${settings.hermesBin} ${args.join(" ")}`,
-        result.stderr?.trim() ? `stderr:\n${result.stderr.trim()}` : undefined,
-        result.stdout?.trim() ? `stdout:\n${result.stdout.trim()}` : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    );
+    throw new Error(`Failed to ${action}: Hermes exited with code ${result.status}`);
+  }
+}
+
+function displayCommand(binary: string, args: string[]): string {
+  const redacted: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    redacted.push(arg);
+    if ((arg === "--prompt" || isCronCreatePrompt(args, index)) && args[index + 1]) {
+      redacted.push("<prompt>");
+      index += 1;
+    }
   }
 
-  const output = result.stdout?.trim();
-  if (output) {
-    console.log(output);
-  }
+  return [binary, ...redacted].map(shellish).join(" ");
+}
+
+function isCronCreatePrompt(args: string[], index: number): boolean {
+  return args[0] === "cron" && args[1] === "create" && index === 2;
+}
+
+function shellish(value: string): string {
+  return /^[A-Za-z0-9_./:=,@+-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 try {
