@@ -1,10 +1,12 @@
 import { loadSettings, validateSettings } from "./config.ts";
+import { requireFeatures } from "./features.ts";
 import { HermesRunner } from "./hermes-runner.ts";
 import { pollPrompt } from "./prompts.ts";
 
 async function main(): Promise<void> {
   const settings = loadSettings();
   validateSettings(settings);
+  requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
   const hermes = new HermesRunner(settings.hermesBin, settings.hermesArgs, settings.hermesTimeoutSeconds);
 
   console.log("Starting Hermes-driven Jira polling loop");

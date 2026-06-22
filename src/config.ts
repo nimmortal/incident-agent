@@ -1,8 +1,10 @@
 import dotenv from "dotenv";
 import { cleanEnv, num, str } from "envalid";
 import { z } from "zod";
+import { buildFeatures, featureRegistrySchema } from "./features.ts";
 
 const settingsSchema = z.object({
+  features: featureRegistrySchema,
   jiraProjectKey: z.string().min(1),
   jiraJql: z.string().min(1),
   jiraPollIntervalSeconds: z.number().int().positive(),
@@ -40,6 +42,7 @@ export function loadSettings(): Settings {
   ].join(" ");
 
   return settingsSchema.parse({
+    features: buildFeatures(process.env),
     jiraProjectKey,
     jiraJql: env.JIRA_JQL || defaultJql,
     jiraPollIntervalSeconds: env.JIRA_POLL_INTERVAL_SECONDS,

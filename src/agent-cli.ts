@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadSettings, validateSettings, type Settings } from "./config.ts";
+import { requireFeatures, type FeatureId } from "./features.ts";
 import { HermesRunner } from "./hermes-runner.ts";
 import { freeformPrompt, incidentPrompt, jiraTicketPrompt, logsPrompt, pollPrompt } from "./prompts.ts";
 
@@ -11,8 +12,10 @@ interface Runtime {
 async function main(): Promise<void> {
   let runtime: Runtime | undefined;
 
-  const runPrompt = async (prompt: string): Promise<void> => {
-    const result = await getRuntime().hermes.run(prompt);
+  const runPrompt = async (prompt: string, requiredFeatures: FeatureId[] = []): Promise<void> => {
+    const { hermes, settings } = getRuntime();
+    requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
+    const result = await hermes.run(prompt);
     console.log(result);
   };
 
@@ -38,13 +41,13 @@ async function main(): Promise<void> {
     .command("ask")
     .description("Ask Hermes to investigate an arbitrary request")
     .argument("<request...>", "request text")
-    .action(async (request: string[]) => runPrompt(freeformPrompt(joinWords(request))));
+    .action(async (request: string[]) => runPrompt(freeformPrompt(joinWords(request), getRuntime().settings)));
 
   program
     .command("ticket")
     .description("Inspect a Jira/JSM ticket through Hermes tools")
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string) => runPrompt(jiraTicketPrompt(issueKey)));
+    .action(async (issueKey: string) => runPrompt(jiraTicketPrompt(issueKey), ["source:jira-jsm"]));
 
   program
     .command("logs")
@@ -52,21 +55,23 @@ async function main(): Promise<void> {
     .option("--window <time-window>", "time window to inspect")
     .argument("<query...>", "log, trace, or metric query")
     .action(async (query: string[], options: { window?: string }) =>
-      runPrompt(logsPrompt(joinWords(query), options.window)),
+      runPrompt(logsPrompt(joinWords(query), options.window), ["source:coralogix"]),
     );
 
   program
     .command("investigate")
     .description("Investigate a Jira/JSM ticket end to end")
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string) => runPrompt(incidentPrompt(issueKey)));
+    .action(async (issueKey: string) =>
+      runPrompt(incidentPrompt(issueKey, getRuntime().settings), ["source:jira-jsm"]),
+    );
 
   program
     .command("poll-once")
     .description("Run one Jira/JSM polling cycle through Hermes")
     .action(async () => {
       const { settings } = getRuntime();
-      return runPrompt(pollPrompt(settings));
+      return runPrompt(pollPrompt(settings), ["source:jira-jsm"]);
     });
 
   if (process.argv.length <= 2) {

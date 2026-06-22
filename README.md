@@ -201,10 +201,14 @@ docker compose run --rm incident-agent npm run agent -- poll-once
 ## Required Secrets
 
 - `COPILOT_GITHUB_TOKEN`: token Hermes uses for GitHub Copilot.
+
+Required only for Jira/JSM commands:
+
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
 - `JIRA_MCP_TOKEN`: token for the Jira/JSM MCP endpoint.
 
-Optional:
+Source credentials. These are optional globally, but required by commands that
+use the corresponding source:
 
 - `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
 - `CORALOGIX_API_KEY`: Coralogix API key, passed through for Hermes/MCP usage.
@@ -236,12 +240,25 @@ npm run poll
 
 Command behavior:
 
-- `ask`: free-form request to Hermes.
-- `ticket`: asks Hermes to inspect a Jira/JSM ticket through Jira MCP.
-- `logs`: asks Hermes to inspect Coralogix data for a query/time window.
-- `investigate`: asks Hermes to run a full incident investigation for one ticket.
-- `poll-once`: asks Hermes to find, claim, investigate, and label matching Jira/JSM tickets.
+- `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
+- `ticket`: requires GitHub Copilot and Jira/JSM.
+- `logs`: requires GitHub Copilot and Coralogix.
+- `investigate`: requires GitHub Copilot and Jira/JSM. GitHub and Coralogix are optional investigation context.
+- `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub and Coralogix are optional investigation context.
 - `poll`: repeats `poll-once` every `JIRA_POLL_INTERVAL_SECONDS`.
+
+## Features
+
+The local wrapper treats capabilities as provider/source modules:
+
+- Provider: GitHub Copilot is mandatory for every Hermes run.
+- Source: Jira/JSM provides tickets and incident workflow through MCP.
+- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh`.
+- Source: Coralogix provides logs, metrics, traces, and alerts through MCP.
+
+Run `npm run doctor` to see which modules are enabled. Missing optional sources
+do not prevent the wrapper from starting, but commands that need a missing source
+fail before starting Hermes.
 
 ## Investigation State
 
