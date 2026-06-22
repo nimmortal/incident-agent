@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import { runtimeConfigPath } from "./hermes-config.ts";
+import { runtimeConfigPath, runtimeHome } from "./hermes-config.ts";
 
 function main(): void {
   const settings = loadSettings();
@@ -19,6 +19,10 @@ function main(): void {
     `- local template: ${existsSync(settings.hermesConfigTemplatePath) ? "found" : "missing"} (${settings.hermesConfigTemplatePath})`,
   );
   console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
+  console.log(`- runtime home: ${runtimeHome(settings)}`);
+  console.log(
+    `- bundled skill seed: ${existsSync(settings.hermesSkillsSeedHome) ? "found" : "missing"} (${settings.hermesSkillsSeedHome})`,
+  );
 
   console.log("\nHermes:");
   const result = spawnSync(settings.hermesBin, ["--version"], {
@@ -42,6 +46,18 @@ function main(): void {
   } else {
     const output = (ghResult.stdout || ghResult.stderr).split(/\r?\n/)[0]?.trim();
     console.log(`- gh: found (${output || "no version output"})`);
+  }
+
+  console.log("\nCoralogix CLI:");
+  const cxResult = spawnSync("cx", ["--version"], {
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  if (cxResult.error) {
+    console.log("- cx: missing or failed");
+  } else {
+    const output = (cxResult.stdout || cxResult.stderr).split(/\r?\n/)[0]?.trim();
+    console.log(`- cx: found (${output || "no version output"})`);
   }
 }
 

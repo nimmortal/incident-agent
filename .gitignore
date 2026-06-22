@@ -8,6 +8,8 @@ node_modules/
 
 # Runtime state
 data/
+.agents/
+skills-lock.json
 
 # Build and coverage output
 dist/

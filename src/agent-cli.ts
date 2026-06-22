@@ -13,10 +13,10 @@ interface Runtime {
 async function main(): Promise<void> {
   let runtime: Runtime | undefined;
 
-  const runPrompt = async (prompt: string, requiredFeatures: FeatureId[] = []): Promise<void> => {
+  const runPrompt = async (prompt: string, requiredFeatures: FeatureId[] = [], skills: string[] = []): Promise<void> => {
     const { hermes, settings } = getRuntime();
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
-    const result = await hermes.run(prompt);
+    const result = await hermes.run(prompt, skillArgs(skills));
     console.log(result);
   };
 
@@ -47,7 +47,9 @@ async function main(): Promise<void> {
     .command("ask")
     .description("Ask Hermes to investigate an arbitrary request")
     .argument("<request...>", "request text")
-    .action(async (request: string[]) => runPrompt(freeformPrompt(joinWords(request), getRuntime().settings)));
+    .action(async (request: string[]) =>
+      runPrompt(freeformPrompt(joinWords(request), getRuntime().settings), [], optionalGithubSkills(getRuntime().settings)),
+    );
 
   program
     .command("ticket")
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
     .option("--window <time-window>", "time window to inspect")
     .argument("<query...>", "log, trace, or metric query")
     .action(async (query: string[], options: { window?: string }) =>
-      runPrompt(logsPrompt(joinWords(query), options.window), ["source:coralogix"]),
+      runPrompt(logsPrompt(joinWords(query), options.window), ["source:coralogix"], ["cx-telemetry-querying"]),
     );
 
   program
@@ -69,7 +71,7 @@ async function main(): Promise<void> {
     .description("Investigate a Jira/JSM ticket end to end")
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
     .action(async (issueKey: string) =>
-      runPrompt(incidentPrompt(issueKey, getRuntime().settings), ["source:jira-jsm"]),
+      runPrompt(incidentPrompt(issueKey, getRuntime().settings), ["source:jira-jsm"], optionalInvestigationSkills(getRuntime().settings)),
     );
 
   program
@@ -77,7 +79,7 @@ async function main(): Promise<void> {
     .description("Run one Jira/JSM polling cycle through Hermes")
     .action(async () => {
       const { settings } = getRuntime();
-      return runPrompt(pollPrompt(settings), ["source:jira-jsm"]);
+      return runPrompt(pollPrompt(settings), ["source:jira-jsm"], optionalInvestigationSkills(settings));
     });
 
   if (process.argv.length <= 2) {
@@ -92,6 +94,24 @@ function joinWords(values: string[]): string {
     throw new Error("Missing required text");
   }
   return text;
+}
+
+function optionalCoralogixSkills(settings: Settings): string[] {
+  return settings.features.sources.coralogix.enabled ? ["cx-telemetry-querying", "cx-incident-management"] : [];
+}
+
+function optionalGithubSkills(settings: Settings): string[] {
+  return settings.features.sources.github.enabled
+    ? ["github-auth", "github-repo-management", "github-pr-workflow", "github-issues"]
+    : [];
+}
+
+function optionalInvestigationSkills(settings: Settings): string[] {
+  return [...optionalGithubSkills(settings), ...optionalCoralogixSkills(settings)];
+}
+
+function skillArgs(skills: string[]): string[] {
+  return skills.length > 0 ? ["--skills", skills.join(",")] : [];
 }
 
 main().catch((error: unknown) => {

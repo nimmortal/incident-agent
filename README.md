@@ -6,7 +6,7 @@ The first version is intentionally simple:
 
 - exposes a small CLI for ad-hoc investigation commands
 - periodically asks Hermes to poll Jira/JSM through MCP
-- delegates Jira, Coralogix, and GitHub investigation to Hermes tools
+- delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
 - keeps the wrapper limited to scheduling and prompt construction
 
 ## Setup
@@ -69,6 +69,7 @@ Useful checks inside the shell:
 ```bash
 hermes --version
 gh --version
+cx --version
 npm run doctor
 ```
 
@@ -134,7 +135,7 @@ docker run --rm \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
-  npm run agent -- ask "Check whether the runtime can see Jira MCP and gh"
+  npm run agent -- ask "Check whether the runtime can see Jira MCP, gh, cx, and Coralogix skills"
 ```
 
 If your Jira MCP server runs on your laptop, use `host.docker.internal` in
@@ -147,7 +148,7 @@ JIRA_MCP_URL=http://host.docker.internal:9000/mcp
 ## Running Without Docker
 
 This is useful for fast CLI iteration, but the host must already have Hermes,
-Node 24+, and `gh` installed.
+Node 24+, `gh`, `cx`, and the Coralogix Hermes skills installed.
 
 ```bash
 npm install
@@ -211,12 +212,20 @@ Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
 - `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
-- `CORALOGIX_API_KEY`: Coralogix API key, passed through for Hermes/MCP usage.
-- `CORALOGIX_DOMAIN`: Coralogix API domain segment used by the Hermes MCP config.
+- `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
+- `CX_REGION`: Coralogix region available to `cx` inside the container.
 
-For GitHub CLI access, the container has `gh` installed. Provide `GITHUB_TOKEN`
-in `.env.local`; Hermes can then call `gh` without relying on an interactive
-login session.
+For GitHub CLI access, the container has `gh` installed and the image build
+seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
+repository management. Those skills prefer `gh` and fall back to lower-level
+GitHub access where appropriate. Provide `GITHUB_TOKEN` in `.env.local`;
+Hermes can then call `gh` without relying on an interactive login session.
+
+For Coralogix access, the container has `cx` installed and the image build
+installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills
+into an image seed profile. Before each Hermes run, the wrapper copies missing
+seeded skills into `HERMES_RUNTIME_HOME/.hermes/skills`, so the skills remain
+available even when `./data` is bind-mounted.
 
 ## Commands
 
@@ -253,17 +262,17 @@ The local wrapper treats capabilities as provider/source modules:
 
 - Provider: GitHub Copilot is mandatory for every Hermes run.
 - Source: Jira/JSM provides tickets and incident workflow through MCP.
-- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh`.
-- Source: Coralogix provides logs, metrics, traces, and alerts through MCP.
+- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh` and bundled GitHub skills.
+- Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
 
 Run `npm run doctor` to see which modules are enabled. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
 fail before starting Hermes.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
-`HERMES_RUNTIME_HOME/.hermes/config.yaml` and sets MCP server `enabled` flags
-from the feature registry. For example, if Coralogix envs are absent, the
-generated Hermes config keeps the Coralogix MCP server disabled.
+`HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
+feature registry, and seeds image-installed Hermes skills into the runtime
+Hermes home if they are missing.
 
 ## Investigation State
 

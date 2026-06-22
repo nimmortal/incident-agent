@@ -8,9 +8,9 @@ export class HermesRunner {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
-  run(prompt: string): Promise<string> {
+  run(prompt: string, extraArgs: string[] = []): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.binary, [...this.args, prompt], {
+      const child = spawn(this.binary, [...withoutQueryFlag(this.args), ...extraArgs, "-q", prompt], {
         env: this.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -44,4 +44,8 @@ export class HermesRunner {
       });
     });
   }
+}
+
+function withoutQueryFlag(args: string[]): string[] {
+  return args.filter((arg) => arg !== "-q" && arg !== "--query");
 }

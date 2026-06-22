@@ -1,10 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
 
 export function buildHermesEnvironment(settings: Settings): NodeJS.ProcessEnv {
   writeRuntimeConfig(settings);
+  seedHermesSkills(settings);
   return {
     ...process.env,
     HOME: runtimeHome(settings),
@@ -24,13 +25,32 @@ function writeRuntimeConfig(settings: Settings): void {
   mkdirSync(dirname(configPath), { recursive: true });
 
   const template = readFileSync(settings.hermesConfigTemplatePath, "utf8");
-  const config = setMcpServerEnabled(
-    setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled),
-    "coralogix",
-    settings.features.sources.coralogix.enabled,
-  );
+  const config = setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled);
 
   writeFileSync(configPath, config);
+}
+
+function seedHermesSkills(settings: Settings): void {
+  const sourceDir = join(resolve(settings.hermesSkillsSeedHome), ".hermes", "skills");
+  if (!existsSync(sourceDir)) {
+    return;
+  }
+
+  const targetDir = join(runtimeHome(settings), ".hermes", "skills");
+  mkdirSync(targetDir, { recursive: true });
+
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const targetPath = join(targetDir, entry.name);
+    if (existsSync(targetPath)) {
+      continue;
+    }
+
+    cpSync(join(sourceDir, entry.name), targetPath, { recursive: true });
+  }
 }
 
 function setMcpServerEnabled(config: string, serverName: string, enabled: boolean): string {

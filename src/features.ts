@@ -43,9 +43,9 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
       github: feature("source:github", "source", "GitHub", "Code, commits, deployments, PRs, and workflow runs through gh.", [
         "GITHUB_TOKEN",
       ], env),
-      coralogix: feature("source:coralogix", "source", "Coralogix", "Logs, metrics, traces, and alerts through Coralogix MCP.", [
-        "CORALOGIX_API_KEY",
-        "CORALOGIX_DOMAIN",
+      coralogix: feature("source:coralogix", "source", "Coralogix", "Logs, metrics, traces, and alerts through cx CLI.", [
+        "CX_API_KEY",
+        "CX_REGION",
       ], env),
     },
   });
