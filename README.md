@@ -33,8 +33,8 @@ The first version is intentionally simple:
 
 ## Running With Docker Compose
 
-Docker Compose is the default local path. It loads `.env.local`, mounts
-`config/hermes.config.yaml` into Hermes, and keeps Hermes data under `./data`.
+Docker Compose is the default local path. It loads `.env.local`, mounts the
+Hermes config template, and keeps generated Hermes runtime state under `./data`.
 
 Run one-off commands:
 
@@ -98,7 +98,7 @@ Run a one-off command:
 ```bash
 docker run --rm \
   --env-file .env.local \
-  -v "$PWD/config/hermes.config.yaml:/home/agent/.hermes/config.yaml:ro" \
+  -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- ask "Check recent logs for service api"
@@ -109,7 +109,7 @@ Run one polling cycle:
 ```bash
 docker run --rm \
   --env-file .env.local \
-  -v "$PWD/config/hermes.config.yaml:/home/agent/.hermes/config.yaml:ro" \
+  -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- poll-once
@@ -120,7 +120,7 @@ Start periodic polling:
 ```bash
 docker run --rm \
   --env-file .env.local \
-  -v "$PWD/config/hermes.config.yaml:/home/agent/.hermes/config.yaml:ro" \
+  -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local
 ```
@@ -131,7 +131,7 @@ Run with local source mounted, without rebuilding:
 docker run --rm \
   --env-file .env.local \
   -v "$PWD/src:/app/src:ro" \
-  -v "$PWD/config/hermes.config.yaml:/home/agent/.hermes/config.yaml:ro" \
+  -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- ask "Check whether the runtime can see Jira MCP and gh"
@@ -156,9 +156,9 @@ npm run doctor
 npm run agent -- ask "Check whether service api had errors in the last 30 minutes"
 ```
 
-For local host execution, Hermes uses your host `~/.hermes` config unless
-`HERMES_BIN` or `HERMES_ARGS` points somewhere else. The Docker path is closer
-to the future Kubernetes runtime.
+For local host execution, the wrapper reads `HERMES_CONFIG_TEMPLATE`, writes a
+generated config under `HERMES_RUNTIME_HOME`, and launches Hermes with that
+directory as `HOME`. The Docker path is closer to the future Kubernetes runtime.
 
 ## Examples
 
@@ -259,6 +259,11 @@ The local wrapper treats capabilities as provider/source modules:
 Run `npm run doctor` to see which modules are enabled. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
 fail before starting Hermes.
+
+Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
+`HERMES_RUNTIME_HOME/.hermes/config.yaml` and sets MCP server `enabled` flags
+from the feature registry. For example, if Coralogix envs are absent, the
+generated Hermes config keeps the Coralogix MCP server disabled.
 
 ## Investigation State
 

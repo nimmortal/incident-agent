@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
+import { runtimeConfigPath } from "./hermes-config.ts";
 
 function main(): void {
   const settings = loadSettings();
@@ -14,11 +14,11 @@ function main(): void {
     console.log(`- ${feature.name} [${feature.kind}]: ${state}`);
   }
 
-  const localConfigPath = "config/hermes.config.yaml";
-  const runtimeConfigPath = join(process.env.HOME ?? "", ".hermes", "config.yaml");
   console.log("\nConfig:");
-  console.log(`- local template: ${existsSync(localConfigPath) ? "found" : "missing"} (${localConfigPath})`);
-  console.log(`- runtime path: ${runtimeConfigPath}`);
+  console.log(
+    `- local template: ${existsSync(settings.hermesConfigTemplatePath) ? "found" : "missing"} (${settings.hermesConfigTemplatePath})`,
+  );
+  console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
 
   console.log("\nHermes:");
   const result = spawnSync(settings.hermesBin, ["--version"], {

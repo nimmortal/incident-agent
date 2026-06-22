@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { loadSettings, validateSettings, type Settings } from "./config.ts";
 import { requireFeatures, type FeatureId } from "./features.ts";
+import { buildHermesEnvironment } from "./hermes-config.ts";
 import { HermesRunner } from "./hermes-runner.ts";
 import { freeformPrompt, incidentPrompt, jiraTicketPrompt, logsPrompt, pollPrompt } from "./prompts.ts";
 
@@ -25,7 +26,12 @@ async function main(): Promise<void> {
       validateSettings(settings);
       runtime = {
         settings,
-        hermes: new HermesRunner(settings.hermesBin, settings.hermesArgs, settings.hermesTimeoutSeconds),
+        hermes: new HermesRunner(
+          settings.hermesBin,
+          settings.hermesArgs,
+          settings.hermesTimeoutSeconds,
+          buildHermesEnvironment(settings),
+        ),
       };
     }
     return runtime;

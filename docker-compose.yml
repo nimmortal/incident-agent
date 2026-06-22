@@ -5,6 +5,6 @@ services:
       - path: .env.local
         required: false
     volumes:
-      - ./config/hermes.config.yaml:/home/agent/.hermes/config.yaml:ro
+      - ./config/hermes.config.yaml:/app/config/hermes.config.yaml:ro
       - ./data:/app/data
     command: ["npm", "run", "poll"]

@@ -5,11 +5,13 @@ export class HermesRunner {
     private readonly binary: string,
     private readonly args: string[],
     private readonly timeoutSeconds: number,
+    private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
   run(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.binary, [...this.args, prompt], {
+        env: this.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
 
