@@ -3,7 +3,14 @@ import { spawnSync } from "node:child_process";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import { hasHermesSkill, runtimeConfigPath, runtimeHome, runtimeSkillsPath, skillsSeedPath } from "./hermes-config.ts";
+import {
+  hasHermesSkill,
+  localSkillsPath,
+  runtimeConfigPath,
+  runtimeHome,
+  runtimeSkillsPath,
+  skillsSeedPath,
+} from "./hermes-config.ts";
 import { managedSkills } from "./skill-sets.ts";
 
 function main(): void {
@@ -24,9 +31,11 @@ function main(): void {
   console.log(`- runtime skills path: ${runtimeSkillsPath(settings)}`);
 
   const seedPath = skillsSeedPath(settings);
+  const localPath = localSkillsPath(settings);
   console.log(`- bundled skill seed: ${existsSync(seedPath) ? "found" : "missing"} (${seedPath})`);
+  console.log(`- local skills path: ${existsSync(localPath) ? "found" : "missing"} (${localPath})`);
   for (const skill of managedSkills) {
-    const state = hasHermesSkill(seedPath, skill) ? "found" : "missing";
+    const state = hasHermesSkill(seedPath, skill) || hasHermesSkill(localPath, skill) ? "found" : "missing";
     console.log(`  - ${skill}: ${state}`);
   }
 
@@ -64,6 +73,18 @@ function main(): void {
   } else {
     const output = (cxResult.stdout || cxResult.stderr).split(/\r?\n/)[0]?.trim();
     console.log(`- cx: found (${output || "no version output"})`);
+  }
+
+  console.log("\nPostgres CLI:");
+  const psqlResult = spawnSync("psql", ["--version"], {
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  if (psqlResult.error) {
+    console.log("- psql: missing or failed");
+  } else {
+    const output = (psqlResult.stdout || psqlResult.stderr).split(/\r?\n/)[0]?.trim();
+    console.log(`- psql: found (${output || "no version output"})`);
   }
 }
 

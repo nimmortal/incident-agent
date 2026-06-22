@@ -8,7 +8,7 @@ ENV CX_VERSION=0.1.10
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git gh \
+  && apt-get install -y --no-install-recommends ca-certificates curl git gh postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /home/agent/.local/bin \
@@ -38,6 +38,7 @@ COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --omit=dev
 COPY src ./src
 COPY config ./config
+COPY skills ./skills
 
 RUN mkdir -p /home/agent/.hermes /app/data
 

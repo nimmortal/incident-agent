@@ -14,6 +14,7 @@ const settingsSchema = z.object({
   hermesConfigTemplatePath: z.string().min(1),
   hermesRuntimeHome: z.string().min(1),
   hermesSkillsSeedHome: z.string().min(1),
+  hermesLocalSkillsPath: z.string().min(1),
   hermesTimeoutSeconds: z.number().int().positive(),
   investigatingLabel: z.string().min(1),
   investigatedLabel: z.string().min(1),
@@ -36,6 +37,7 @@ export function loadSettings(): Settings {
     HERMES_CONFIG_TEMPLATE: str({ default: "config/hermes.config.yaml" }),
     HERMES_RUNTIME_HOME: str({ default: "data/hermes-home" }),
     HERMES_SKILLS_SEED_HOME: str({ default: "/opt/hermes-seed-home" }),
+    HERMES_LOCAL_SKILLS_PATH: str({ default: "skills" }),
     HERMES_TIMEOUT_SECONDS: num({ default: 900 }),
   });
 
@@ -58,6 +60,7 @@ export function loadSettings(): Settings {
     hermesConfigTemplatePath: env.HERMES_CONFIG_TEMPLATE,
     hermesRuntimeHome: env.HERMES_RUNTIME_HOME,
     hermesSkillsSeedHome: env.HERMES_SKILLS_SEED_HOME,
+    hermesLocalSkillsPath: env.HERMES_LOCAL_SKILLS_PATH,
     hermesTimeoutSeconds: env.HERMES_TIMEOUT_SECONDS,
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",

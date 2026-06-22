@@ -44,8 +44,9 @@ export function incidentPrompt(issueKey: string, settings: Settings): string {
     "1. Use Jira MCP to read the ticket, comments, links, status, labels, and customer impact.",
     "2. If Coralogix is configured, use cx CLI with the loaded Coralogix skills to inspect relevant logs, metrics, traces, alerts, incidents, and error signatures.",
     "3. If GitHub is configured, inspect recent deployments, commits, PRs, and workflow runs if they may be relevant.",
-    "4. Post no public customer response unless explicitly asked. If writing to Jira, use an internal/private note.",
-    "5. Produce an evidence-backed RCA draft with confidence and follow-up actions.",
+    "4. If Postgres is configured, use psql with the loaded Postgres skill for read-only database evidence when the ticket points to application state or records.",
+    "5. Post no public customer response unless explicitly asked. If writing to Jira, use an internal/private note.",
+    "6. Produce an evidence-backed RCA draft with confidence and follow-up actions.",
   ].join("\n");
 }
 
@@ -65,7 +66,7 @@ export function pollPrompt(settings: Settings): string {
     `1. If it already has label ${settings.investigatedLabel} or ${settings.investigatingLabel}, skip it.`,
     `2. Claim it by adding label ${settings.investigatingLabel}.`,
     "3. Add an internal/private Jira note saying AI investigation started.",
-    "4. Investigate using Jira MCP plus any configured optional sources. For Coralogix, use cx CLI.",
+    "4. Investigate using Jira MCP plus any configured optional sources. For Coralogix, use cx CLI. For Postgres, use psql read-only.",
     "5. Add an internal/private RCA comment with summary, timeline, evidence, likely root cause, confidence, mitigations, follow-up actions, and open questions.",
     `6. On success, add label ${settings.investigatedLabel} and remove ${settings.investigatingLabel}.`,
     `7. On failure, add label ${settings.failedLabel}, remove ${settings.investigatingLabel}, and include the failure reason in your final output.`,
@@ -85,7 +86,12 @@ function baseInstructions(): string {
 }
 
 function featureContext(settings: Settings): string {
-  const features = [settings.features.sources.jiraJsm, settings.features.sources.github, settings.features.sources.coralogix];
+  const features = [
+    settings.features.sources.jiraJsm,
+    settings.features.sources.github,
+    settings.features.sources.coralogix,
+    settings.features.sources.postgres,
+  ];
   return [
     "Configured sources:",
     ...features.map((feature) => {

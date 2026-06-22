@@ -135,7 +135,7 @@ docker run --rm \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
-  npm run agent -- ask "Check whether the runtime can see Jira MCP, gh, cx, and Coralogix skills"
+  npm run agent -- ask "Check whether the runtime can see Jira MCP, gh, cx, psql, and source skills"
 ```
 
 If your Jira MCP server runs on your laptop, use `host.docker.internal` in
@@ -148,10 +148,10 @@ JIRA_MCP_URL=http://host.docker.internal:9000/mcp
 ## Running Without Docker
 
 This is useful for fast CLI iteration, but the host must already have Hermes,
-Node 24+, `gh`, `cx`, and the required Hermes skills installed. The wrapper
-launches Hermes with `HOME=HERMES_RUNTIME_HOME`, so host-installed skills under
-your normal `~/.hermes` are not visible unless you seed them into the runtime
-home.
+Node 24+, `gh`, `cx`, `psql`, and the required Hermes skills installed. The
+wrapper launches Hermes with `HOME=HERMES_RUNTIME_HOME`, so host-installed
+skills under your normal `~/.hermes` are not visible unless you seed them into
+the runtime home. Repository-local skills are read from `HERMES_LOCAL_SKILLS_PATH`.
 
 ```bash
 npm install
@@ -173,7 +173,7 @@ npx skills add coralogix/cx-cli \
 
 The Docker image already includes Hermes' bundled GitHub skills. For host mode,
 verify that `npm run doctor` reports all expected seed skills as `found` before
-using GitHub or Coralogix commands.
+using GitHub, Coralogix, or Postgres commands.
 
 For Copilot-only prompt tests that do not need source skills:
 
@@ -239,6 +239,7 @@ use the corresponding source:
 - `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
+- `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
 
 For GitHub CLI access, the container has `gh` installed and the image build
 seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
@@ -252,10 +253,16 @@ into an image seed profile. Before each Hermes run, the wrapper refreshes
 image-managed skills in `HERMES_RUNTIME_HOME/.hermes/skills`, so image rebuilds
 roll out skill updates even when `./data` is bind-mounted.
 
+For Postgres access, the container has `psql` installed and the repository
+includes a `postgres-readonly` Hermes skill. Set `DATABASE_URL` only when the
+agent should be allowed to read database state. The skill instructs Hermes to use
+read-only transactions, short statement timeouts, tight filters, and masked
+summaries for sensitive fields.
+
 ## Commands
 
-The wrapper intentionally does not implement Jira, GitHub, or Coralogix clients.
-Those systems are exposed to Hermes as tools.
+The wrapper intentionally does not implement Jira, GitHub, Coralogix, or
+Postgres clients. Those systems are exposed to Hermes as tools.
 CLI parsing is handled by Commander, so use the built-in help while iterating:
 
 ```bash
@@ -277,8 +284,8 @@ Command behavior:
 - `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
 - `ticket`: requires GitHub Copilot and Jira/JSM.
 - `logs`: requires GitHub Copilot and Coralogix.
-- `investigate`: requires GitHub Copilot and Jira/JSM. GitHub and Coralogix are optional investigation context.
-- `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub and Coralogix are optional investigation context.
+- `investigate`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
+- `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `poll`: repeats `poll-once` every `JIRA_POLL_INTERVAL_SECONDS`.
 
 ## Features
@@ -289,6 +296,7 @@ The local wrapper treats capabilities as provider/source modules:
 - Source: Jira/JSM provides tickets and incident workflow through MCP.
 - Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh` and bundled GitHub skills.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
+- Source: Postgres provides read-only database evidence through `psql` and a repository-local skill.
 
 Run `npm run doctor` to see which modules are enabled. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
@@ -297,8 +305,8 @@ fail before starting Hermes.
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
 feature registry, refreshes image-installed Hermes skills in the runtime Hermes
-home, and checks required CLI binaries plus preloaded skills before starting
-Hermes.
+home, refreshes repository-local Hermes skills, and checks required CLI binaries
+plus preloaded skills before starting Hermes.
 
 ## Investigation State
 

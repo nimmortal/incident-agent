@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const featureIdSchema = z.enum(["provider:copilot", "source:jira-jsm", "source:github", "source:coralogix"]);
+export const featureIdSchema = z.enum([
+  "provider:copilot",
+  "source:jira-jsm",
+  "source:github",
+  "source:coralogix",
+  "source:postgres",
+]);
 export type FeatureId = z.infer<typeof featureIdSchema>;
 
 export const featureSchema = z.object({
@@ -23,6 +29,7 @@ export const featureRegistrySchema = z.object({
     jiraJsm: featureSchema,
     github: featureSchema,
     coralogix: featureSchema,
+    postgres: featureSchema,
   }),
 });
 
@@ -47,6 +54,7 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
         "CX_API_KEY",
         "CX_REGION",
       ], env),
+      postgres: feature("source:postgres", "source", "Postgres", "Read-only database access through psql.", ["DATABASE_URL"], env),
     },
   });
 }
@@ -65,7 +73,13 @@ export function requireFeatures(registry: FeatureRegistry, featureIds: FeatureId
 }
 
 export function listFeatures(registry: FeatureRegistry): Feature[] {
-  return [registry.provider.copilot, registry.sources.jiraJsm, registry.sources.github, registry.sources.coralogix];
+  return [
+    registry.provider.copilot,
+    registry.sources.jiraJsm,
+    registry.sources.github,
+    registry.sources.coralogix,
+    registry.sources.postgres,
+  ];
 }
 
 function getFeature(registry: FeatureRegistry, featureId: FeatureId): Feature {
@@ -78,6 +92,8 @@ function getFeature(registry: FeatureRegistry, featureId: FeatureId): Feature {
       return registry.sources.github;
     case "source:coralogix":
       return registry.sources.coralogix;
+    case "source:postgres":
+      return registry.sources.postgres;
   }
 }
 

@@ -29,6 +29,10 @@ export function skillsSeedPath(settings: Settings): string {
   return join(resolve(settings.hermesSkillsSeedHome), ".hermes", "skills");
 }
 
+export function localSkillsPath(settings: Settings): string {
+  return resolve(settings.hermesLocalSkillsPath);
+}
+
 export function hasHermesSkill(skillsPath: string, skillName: string): boolean {
   return findHermesSkillPath(skillsPath, skillName) !== undefined;
 }
@@ -69,7 +73,8 @@ function writeRuntimeConfig(settings: Settings): void {
 
 function seedHermesSkills(settings: Settings): void {
   const sourceDir = skillsSeedPath(settings);
-  if (!existsSync(sourceDir)) {
+  const localDir = localSkillsPath(settings);
+  if (!existsSync(sourceDir) && !existsSync(localDir)) {
     return;
   }
 
@@ -77,7 +82,7 @@ function seedHermesSkills(settings: Settings): void {
   mkdirSync(targetDir, { recursive: true });
 
   for (const skill of managedSkills) {
-    const sourcePath = findHermesSkillPath(sourceDir, skill);
+    const sourcePath = findHermesSkillPath(sourceDir, skill) ?? findHermesSkillPath(localDir, skill);
     if (!sourcePath) {
       continue;
     }
