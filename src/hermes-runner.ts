@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
 
+import { copilotAuthFailureHint } from "./runtime-preflight.ts";
+
+const outputTailLimit = 8_000;
+
 export class HermesRunner {
   constructor(
     private readonly binary: string,
@@ -25,11 +29,14 @@ export class HermesRunner {
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
+      let outputTail = "";
       child.stdout.on("data", (chunk) => {
         process.stdout.write(chunk);
+        outputTail = appendOutputTail(outputTail, chunk);
       });
       child.stderr.on("data", (chunk) => {
         process.stderr.write(chunk);
+        outputTail = appendOutputTail(outputTail, chunk);
       });
       child.on("error", (error) => {
         clearTimeout(timeout);
@@ -38,13 +45,18 @@ export class HermesRunner {
       child.on("close", (code) => {
         clearTimeout(timeout);
         if (code !== 0) {
-          reject(new Error(`Hermes exited with code ${code}. Output was streamed above.`));
+          reject(new Error([`Hermes exited with code ${code}. Output was streamed above.`, copilotAuthFailureHint(outputTail)].filter(Boolean).join("\n\n")));
           return;
         }
         resolve("");
       });
     });
   }
+}
+
+function appendOutputTail(current: string, chunk: string): string {
+  const next = current + chunk;
+  return next.length > outputTailLimit ? next.slice(-outputTailLimit) : next;
 }
 
 function withoutQueryFlag(args: string[]): string[] {

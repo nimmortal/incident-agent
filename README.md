@@ -232,7 +232,9 @@ Supported Copilot token options:
 
 - OAuth/device-flow token (`gho_*`), for example from `hermes model` or Copilot login flows.
 - GitHub App token (`ghu_*`).
-- Fine-grained PAT (`github_pat_*`) with Copilot Requests permission.
+- Fine-grained PAT (`github_pat_*`) owned by your personal account, not an organization, with the Account > Copilot Requests permission.
+
+If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup.
 
 Required only for Jira/JSM commands:
 

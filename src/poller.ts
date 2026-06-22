@@ -6,7 +6,7 @@ import { loadSettings, validateSettings, type Settings } from "./config.ts";
 import { requireFeatures } from "./features.ts";
 import { buildHermesEnvironment, runtimeConfigPath } from "./hermes-config.ts";
 import { pollPrompt } from "./prompts.ts";
-import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
+import { copilotAuthFailureHint, requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { optionalSourceSkills } from "./skill-sets.ts";
 
 const POLL_JOB_NAME = "incident-agent-jira-poll";
@@ -163,7 +163,9 @@ function runHermes(settings: Settings, env: NodeJS.ProcessEnv, args: string[], a
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(`Failed to ${action}: Hermes exited with code ${result.status}`);
+    throw new Error(
+      [`Failed to ${action}: Hermes exited with code ${result.status}`, copilotAuthFailureHint("")].filter(Boolean).join("\n\n"),
+    );
   }
 }
 
