@@ -10,15 +10,20 @@ export function buildHermesEnvironment(settings: Settings): NodeJS.ProcessEnv {
   return {
     ...process.env,
     HOME: runtimeHome(settings),
+    HERMES_HOME: runtimeHermesHome(settings),
   };
 }
 
 export function runtimeConfigPath(settings: Settings): string {
-  return join(runtimeHome(settings), ".hermes", "config.yaml");
+  return join(runtimeHermesHome(settings), "config.yaml");
 }
 
 export function runtimeSkillsPath(settings: Settings): string {
-  return join(runtimeHome(settings), ".hermes", "skills");
+  return join(runtimeHermesHome(settings), "skills");
+}
+
+export function runtimeHermesHome(settings: Settings): string {
+  return join(runtimeHome(settings), ".hermes");
 }
 
 export function runtimeHome(settings: Settings): string {

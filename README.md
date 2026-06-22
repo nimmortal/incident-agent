@@ -5,7 +5,7 @@ Local PoC for a Hermes-based incident investigation agent.
 The first version is intentionally simple:
 
 - exposes a small CLI for ad-hoc investigation commands
-- periodically asks Hermes to poll Jira/JSM through MCP
+- uses Hermes cron and gateway to poll Jira/JSM through MCP
 - delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
 - keeps the wrapper limited to scheduling and prompt construction
 
@@ -46,7 +46,7 @@ docker compose run --rm incident-agent npm run investigate -- JSM-123
 docker compose run --rm incident-agent npm run agent -- poll-once
 ```
 
-Start periodic polling:
+Start periodic polling through Hermes cron and gateway:
 
 ```bash
 docker compose up incident-agent
@@ -116,7 +116,7 @@ docker run --rm \
   npm run agent -- poll-once
 ```
 
-Start periodic polling:
+Start periodic polling through Hermes cron and gateway:
 
 ```bash
 docker run --rm \
@@ -286,7 +286,7 @@ Command behavior:
 - `logs`: requires GitHub Copilot and Coralogix.
 - `investigate`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
-- `poll`: repeats `poll-once` every `JIRA_POLL_INTERVAL_SECONDS`.
+- `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
 
 ## Features
 
@@ -308,6 +308,11 @@ Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 feature registry, refreshes image-installed Hermes skills in the runtime Hermes
 home, refreshes repository-local Hermes skills, and checks required CLI binaries
 plus preloaded skills before starting Hermes.
+
+Periodic polling uses Hermes' native cron scheduler. `npm run poll` creates or
+updates the managed `incident-agent-jira-poll` job using
+`JIRA_POLL_INTERVAL_SECONDS`, removes duplicate managed jobs, and then starts
+the Hermes gateway in the foreground so due cron jobs fire.
 
 ## Investigation State
 
