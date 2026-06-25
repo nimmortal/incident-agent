@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import { hasGitHubAppCredentials, missingGitHubAppCredentials } from "./github-app-token.ts";
+import { gitHubAppTokenSourceDescription, missingGitHubAppCredentials } from "./github-app-token.ts";
 import {
   hasHermesSkill,
   localSkillsPath,
@@ -53,8 +53,9 @@ function main(): void {
   }
 
   console.log("\nGitHub CLI:");
-  if (hasGitHubAppCredentials()) {
-    console.log(`- token source: GitHub App installation ${process.env.GITHUB_APP_INSTALLATION_ID} (generated at runtime)`);
+  const appTokenSource = gitHubAppTokenSourceDescription();
+  if (appTokenSource) {
+    console.log(`- token source: ${appTokenSource} (generated at runtime)`);
   } else if (process.env.GITHUB_TOKEN?.trim()) {
     console.log("- token source: GITHUB_TOKEN");
   } else {

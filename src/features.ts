@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { hasGitHubAppCredentials, missingGitHubAppCredentials, usesGitHubAppTokenForCopilot } from "./github-app-token.ts";
+import { hasGitHubAppCredentials, missingGitHubAppCredentials } from "./github-app-token.ts";
 
 export const featureIdSchema = z.enum([
   "provider:copilot",
@@ -81,16 +81,14 @@ export function listFeatures(registry: FeatureRegistry): Feature[] {
 }
 
 function copilotFeature(env: NodeJS.ProcessEnv): Feature {
-  const hasToken = Boolean(env.COPILOT_GITHUB_TOKEN?.trim());
-  const hasAppSource = usesGitHubAppTokenForCopilot(env) && hasGitHubAppCredentials(env);
-  const missingEnv = hasToken || hasAppSource ? [] : ["COPILOT_GITHUB_TOKEN"];
+  const missingEnv = env.COPILOT_GITHUB_TOKEN?.trim() ? [] : ["COPILOT_GITHUB_TOKEN"];
 
   return {
     id: "provider:copilot",
     kind: "provider",
     name: "GitHub Copilot",
     description: "LLM provider used by Hermes.",
-    requiredEnv: ["COPILOT_GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN_SOURCE"],
+    requiredEnv: ["COPILOT_GITHUB_TOKEN"],
     missingEnv,
     enabled: missingEnv.length === 0,
   };
@@ -109,6 +107,8 @@ function githubFeature(env: NodeJS.ProcessEnv): Feature {
     requiredEnv: [
       "GITHUB_TOKEN",
       "GITHUB_APP_ID",
+      "GITHUB_APP_INSTALLATION_ACCOUNT",
+      "GITHUB_APP_REPOSITORY",
       "GITHUB_APP_INSTALLATION_ID",
       "GITHUB_APP_PRIVATE_KEY_PATH",
       "GITHUB_APP_PRIVATE_KEY_BASE64",

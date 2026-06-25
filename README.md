@@ -234,12 +234,7 @@ Supported Copilot token options:
 - GitHub App token (`ghu_*`).
 - Fine-grained PAT (`github_pat_*`) owned by your personal account, not an organization, with the Account > Copilot Requests permission.
 
-If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup.
-
-To test whether a GitHub App installation token works for Hermes Copilot too,
-set `COPILOT_GITHUB_TOKEN_SOURCE=github-app` alongside the GitHub App
-credentials. The wrapper will generate one `ghs_*` installation token and expose
-it as both `GITHUB_TOKEN` and `COPILOT_GITHUB_TOKEN` in the Hermes child process.
+If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup. GitHub App installation tokens (`ghs_*`) are generated only for `gh` and repository/API access, not for Copilot auth.
 
 Required only for Jira/JSM commands:
 
@@ -249,7 +244,7 @@ Required only for Jira/JSM commands:
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
-- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and one private key source: `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_PRIVATE_KEY_BASE64`, or `GITHUB_APP_PRIVATE_KEY`. The wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
+- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID` and one private key source: `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_PRIVATE_KEY_BASE64`, or `GITHUB_APP_PRIVATE_KEY`. The wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
@@ -265,7 +260,28 @@ the Hermes child process, and clears `GH_TOKEN` for that child so `gh` does not
 prefer a stale token. The private key must be the `.pem` downloaded from the
 GitHub App settings, not the webhook secret or client secret.
 
-Preferred private key options:
+Preferred GitHub App setup when the app has one installation:
+
+```env
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-app.pem
+```
+
+If the app has multiple installations, choose one by account login:
+
+```env
+GITHUB_APP_INSTALLATION_ACCOUNT=your-user-or-org
+```
+
+If you do have a specific repository, this also works:
+
+```env
+GITHUB_APP_REPOSITORY=owner/repo
+```
+
+If you already know the correct id, `GITHUB_APP_INSTALLATION_ID` still works.
+
+Private key options:
 
 ```env
 GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-app.pem
@@ -285,12 +301,6 @@ Inline PEM also works, but every newline must be escaped as `\n`:
 
 ```env
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
-```
-
-Optional Copilot experiment:
-
-```env
-COPILOT_GITHUB_TOKEN_SOURCE=github-app
 ```
 
 For Coralogix access, the container has `cx` installed and the image build
