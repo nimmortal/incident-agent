@@ -1,6 +1,8 @@
 import { createSign } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-const githubAppEnvVars = ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY"] as const;
+const githubAppRequiredEnvVars = ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID"] as const;
+const githubAppPrivateKeyEnvVars = ["GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_BASE64", "GITHUB_APP_PRIVATE_KEY_PATH"] as const;
 const githubAppCopilotSource = "github-app";
 
 interface GitHubAppCredentials {
@@ -16,11 +18,15 @@ interface InstallationTokenResponse {
 }
 
 export function hasGitHubAppCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
-  return githubAppEnvVars.every((name) => env[name]?.trim());
+  return githubAppRequiredEnvVars.every((name) => env[name]?.trim()) && Boolean(privateKeySource(env));
 }
 
 export function missingGitHubAppCredentials(env: NodeJS.ProcessEnv = process.env): string[] {
-  return githubAppEnvVars.filter((name) => !env[name]?.trim());
+  const missing: string[] = githubAppRequiredEnvVars.filter((name) => !env[name]?.trim());
+  if (!privateKeySource(env)) {
+    missing.push(githubAppPrivateKeyEnvVars.join(" or "));
+  }
+  return missing;
 }
 
 export function usesGitHubAppTokenForCopilot(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -59,12 +65,30 @@ function readGitHubAppCredentials(env: NodeJS.ProcessEnv): GitHubAppCredentials 
   return {
     appId: env.GITHUB_APP_ID!.trim(),
     installationId: env.GITHUB_APP_INSTALLATION_ID!.trim(),
-    privateKey: normalizePrivateKey(env.GITHUB_APP_PRIVATE_KEY!.trim()),
+    privateKey: readPrivateKey(env),
   };
 }
 
 function normalizePrivateKey(value: string): string {
-  return value.replace(/\\n/g, "\n");
+  return value.trim().replace(/\r\n/g, "\n").replace(/\\n/g, "\n");
+}
+
+function privateKeySource(env: NodeJS.ProcessEnv): (typeof githubAppPrivateKeyEnvVars)[number] | undefined {
+  return githubAppPrivateKeyEnvVars.find((name) => env[name]?.trim());
+}
+
+function readPrivateKey(env: NodeJS.ProcessEnv): string {
+  if (env.GITHUB_APP_PRIVATE_KEY?.trim()) {
+    return normalizePrivateKey(env.GITHUB_APP_PRIVATE_KEY);
+  }
+  if (env.GITHUB_APP_PRIVATE_KEY_BASE64?.trim()) {
+    return normalizePrivateKey(Buffer.from(env.GITHUB_APP_PRIVATE_KEY_BASE64.trim(), "base64").toString("utf8"));
+  }
+  if (env.GITHUB_APP_PRIVATE_KEY_PATH?.trim()) {
+    return normalizePrivateKey(readFileSync(env.GITHUB_APP_PRIVATE_KEY_PATH.trim(), "utf8"));
+  }
+
+  throw new Error(`Missing GitHub App private key. Set one of: ${githubAppPrivateKeyEnvVars.join(", ")}`);
 }
 
 async function createInstallationAccessToken(credentials: GitHubAppCredentials): Promise<{ token: string; expiresAt?: string }> {
@@ -109,7 +133,12 @@ function createAppJwt(appId: string, privateKey: string): string {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Failed to sign GitHub App JWT. Check GITHUB_APP_PRIVATE_KEY and store PEM newlines as \\n in .env.local. ${detail}`,
+      [
+        "Failed to sign GitHub App JWT.",
+        "Use the private key PEM downloaded from the GitHub App settings, not the webhook secret or client secret.",
+        "Set it with GITHUB_APP_PRIVATE_KEY_PATH, GITHUB_APP_PRIVATE_KEY_BASE64, or GITHUB_APP_PRIVATE_KEY with PEM newlines escaped as \\n.",
+        detail,
+      ].join(" "),
     );
   }
   return `${data}.${signature}`;

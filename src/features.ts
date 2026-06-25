@@ -106,7 +106,14 @@ function githubFeature(env: NodeJS.ProcessEnv): Feature {
     kind: "source",
     name: "GitHub",
     description: "Code, commits, deployments, PRs, and workflow runs through gh.",
-    requiredEnv: ["GITHUB_TOKEN", "GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY"],
+    requiredEnv: [
+      "GITHUB_TOKEN",
+      "GITHUB_APP_ID",
+      "GITHUB_APP_INSTALLATION_ID",
+      "GITHUB_APP_PRIVATE_KEY_PATH",
+      "GITHUB_APP_PRIVATE_KEY_BASE64",
+      "GITHUB_APP_PRIVATE_KEY",
+    ],
     missingEnv,
     enabled: missingEnv.length === 0,
   };

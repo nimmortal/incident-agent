@@ -249,7 +249,7 @@ Required only for Jira/JSM commands:
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
-- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`; the wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
+- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and one private key source: `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_PRIVATE_KEY_BASE64`, or `GITHUB_APP_PRIVATE_KEY`. The wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
@@ -262,7 +262,26 @@ credentials in `.env.local`; Hermes can then call `gh` without relying on an
 interactive login session. When GitHub App credentials are present, the wrapper
 generates a `ghs_*` installation token at startup, sets it as `GITHUB_TOKEN` for
 the Hermes child process, and clears `GH_TOKEN` for that child so `gh` does not
-prefer a stale token. Store PEM private keys with escaped newlines in `.env.local`:
+prefer a stale token. The private key must be the `.pem` downloaded from the
+GitHub App settings, not the webhook secret or client secret.
+
+Preferred private key options:
+
+```env
+GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-app.pem
+```
+
+or:
+
+```bash
+base64 -i github-app.pem
+```
+
+```env
+GITHUB_APP_PRIVATE_KEY_BASE64=LS0tLS1CRUdJTi...
+```
+
+Inline PEM also works, but every newline must be escaped as `\n`:
 
 ```env
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
