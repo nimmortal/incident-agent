@@ -1,6 +1,7 @@
 import { createSign } from "node:crypto";
 
 const githubAppEnvVars = ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY"] as const;
+const githubAppCopilotSource = "github-app";
 
 interface GitHubAppCredentials {
   appId: string;
@@ -22,6 +23,10 @@ export function missingGitHubAppCredentials(env: NodeJS.ProcessEnv = process.env
   return githubAppEnvVars.filter((name) => !env[name]?.trim());
 }
 
+export function usesGitHubAppTokenForCopilot(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.COPILOT_GITHUB_TOKEN_SOURCE?.trim() === githubAppCopilotSource;
+}
+
 export async function applyGitHubAppToken(env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> {
   const credentials = readGitHubAppCredentials(env);
   if (!credentials) {
@@ -33,10 +38,16 @@ export async function applyGitHubAppToken(env: NodeJS.ProcessEnv): Promise<NodeJ
     ...env,
     GITHUB_TOKEN: installation.token,
   };
+  if (usesGitHubAppTokenForCopilot(env)) {
+    nextEnv.COPILOT_GITHUB_TOKEN = installation.token;
+  }
   delete nextEnv.GH_TOKEN;
 
   const expires = installation.expiresAt ? `, expires ${installation.expiresAt}` : "";
   console.error(`[incident-agent] GitHub CLI token source: GitHub App installation ${credentials.installationId} (ghs_*${expires})`);
+  if (usesGitHubAppTokenForCopilot(env)) {
+    console.error(`[incident-agent] Copilot token source: GitHub App installation ${credentials.installationId} (ghs_*)`);
+  }
   return nextEnv;
 }
 

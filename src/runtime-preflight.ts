@@ -1,12 +1,17 @@
 import { spawnSync } from "node:child_process";
 
 import type { Settings } from "./config.ts";
+import { usesGitHubAppTokenForCopilot } from "./github-app-token.ts";
 import { hasHermesSkill, runtimeSkillsPath } from "./hermes-config.ts";
 import { coralogixSkills, githubSkillNames, postgresSkills, skillName } from "./skill-sets.ts";
 
 const copilotTokenEnvVars = ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as const;
 
 export function requireCopilotTokenSupported(): void {
+  if (usesGitHubAppTokenForCopilot()) {
+    return;
+  }
+
   const token = selectedCopilotToken();
   if (!token) {
     return;

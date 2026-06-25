@@ -236,6 +236,11 @@ Supported Copilot token options:
 
 If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup.
 
+To test whether a GitHub App installation token works for Hermes Copilot too,
+set `COPILOT_GITHUB_TOKEN_SOURCE=github-app` alongside the GitHub App
+credentials. The wrapper will generate one `ghs_*` installation token and expose
+it as both `GITHUB_TOKEN` and `COPILOT_GITHUB_TOKEN` in the Hermes child process.
+
 Required only for Jira/JSM commands:
 
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
@@ -261,6 +266,12 @@ prefer a stale token. Store PEM private keys with escaped newlines in `.env.loca
 
 ```env
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
+```
+
+Optional Copilot experiment:
+
+```env
+COPILOT_GITHUB_TOKEN_SOURCE=github-app
 ```
 
 For Coralogix access, the container has `cx` installed and the image build
