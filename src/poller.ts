@@ -26,14 +26,14 @@ interface JobsFile {
   jobs?: CronJob[];
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const settings = loadSettings();
   validateSettings(settings);
   requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
   requireCopilotTokenSupported();
 
   const skills = optionalSourceSkills(settings);
-  const env = buildHermesEnvironment(settings);
+  const env = await buildHermesEnvironment(settings);
   requireRuntimeForSkills(settings, skills);
   ensurePollCronJob(settings, env, skills);
 
@@ -192,9 +192,7 @@ function shellish(value: string): string {
   return /^[A-Za-z0-9_./:=,@+-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
-}
+});

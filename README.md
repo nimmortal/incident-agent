@@ -244,7 +244,7 @@ Required only for Jira/JSM commands:
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
-- `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
+- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`; the wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
@@ -252,8 +252,16 @@ use the corresponding source:
 For GitHub CLI access, the container has `gh` installed and the image build
 seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
 repository management. Those skills prefer `gh` and fall back to lower-level
-GitHub access where appropriate. Provide `GITHUB_TOKEN` in `.env.local`;
-Hermes can then call `gh` without relying on an interactive login session.
+GitHub access where appropriate. Provide either `GITHUB_TOKEN` or GitHub App
+credentials in `.env.local`; Hermes can then call `gh` without relying on an
+interactive login session. When GitHub App credentials are present, the wrapper
+generates a `ghs_*` installation token at startup, sets it as `GITHUB_TOKEN` for
+the Hermes child process, and clears `GH_TOKEN` for that child so `gh` does not
+prefer a stale token. Store PEM private keys with escaped newlines in `.env.local`:
+
+```env
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
+```
 
 For Coralogix access, the container has `cx` installed and the image build
 installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills

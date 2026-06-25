@@ -13,10 +13,10 @@ interface Runtime {
 }
 
 async function main(): Promise<void> {
-  let runtime: Runtime | undefined;
+  let runtime: Promise<Runtime> | undefined;
 
   const runPrompt = async (prompt: string, requiredFeatures: FeatureId[] = [], skills: string[] = []): Promise<void> => {
-    const { hermes, settings } = getRuntime();
+    const { hermes, settings } = await getRuntime();
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
     requireCopilotTokenSupported();
     requireRuntimeForSkills(settings, skills);
@@ -26,21 +26,25 @@ async function main(): Promise<void> {
     }
   };
 
-  const getRuntime = (): Runtime => {
+  const getRuntime = (): Promise<Runtime> => {
     if (!runtime) {
-      const settings = loadSettings();
-      validateSettings(settings);
-      runtime = {
-        settings,
-        hermes: new HermesRunner(
-          settings.hermesBin,
-          settings.hermesArgs,
-          settings.hermesTimeoutSeconds,
-          buildHermesEnvironment(settings),
-        ),
-      };
+      runtime = createRuntime();
     }
     return runtime;
+  };
+
+  const createRuntime = async (): Promise<Runtime> => {
+    const settings = loadSettings();
+    validateSettings(settings);
+    return {
+      settings,
+      hermes: new HermesRunner(
+        settings.hermesBin,
+        settings.hermesArgs,
+        settings.hermesTimeoutSeconds,
+        await buildHermesEnvironment(settings),
+      ),
+    };
   };
 
   const program = new Command()
@@ -53,9 +57,10 @@ async function main(): Promise<void> {
     .command("ask")
     .description("Ask Hermes to investigate an arbitrary request")
     .argument("<request...>", "request text")
-    .action(async (request: string[]) =>
-      runPrompt(freeformPrompt(joinWords(request), getRuntime().settings), [], optionalSourceSkills(getRuntime().settings)),
-    );
+    .action(async (request: string[]) => {
+      const { settings } = await getRuntime();
+      return runPrompt(freeformPrompt(joinWords(request), settings), [], optionalSourceSkills(settings));
+    });
 
   program
     .command("ticket")
@@ -76,15 +81,16 @@ async function main(): Promise<void> {
     .command("investigate")
     .description("Investigate a Jira/JSM ticket end to end")
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string) =>
-      runPrompt(incidentPrompt(issueKey, getRuntime().settings), ["source:jira-jsm"], optionalSourceSkills(getRuntime().settings)),
-    );
+    .action(async (issueKey: string) => {
+      const { settings } = await getRuntime();
+      return runPrompt(incidentPrompt(issueKey, settings), ["source:jira-jsm"], optionalSourceSkills(settings));
+    });
 
   program
     .command("poll-once")
     .description("Run one Jira/JSM polling cycle through Hermes")
     .action(async () => {
-      const { settings } = getRuntime();
+      const { settings } = await getRuntime();
       return runPrompt(pollPrompt(settings), ["source:jira-jsm"], optionalSourceSkills(settings));
     });
 

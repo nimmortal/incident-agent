@@ -2,16 +2,17 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
+import { applyGitHubAppToken } from "./github-app-token.ts";
 import { managedSkillTargets } from "./skill-sets.ts";
 
-export function buildHermesEnvironment(settings: Settings): NodeJS.ProcessEnv {
+export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
   writeRuntimeConfig(settings);
   seedHermesSkills(settings);
-  return {
+  return applyGitHubAppToken({
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
-  };
+  });
 }
 
 export function runtimeConfigPath(settings: Settings): string {

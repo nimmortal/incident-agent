@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { hasGitHubAppCredentials, missingGitHubAppCredentials } from "./github-app-token.ts";
+
 export const featureIdSchema = z.enum([
   "provider:copilot",
   "source:jira-jsm",
@@ -47,9 +49,7 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
         "JIRA_MCP_URL",
         "JIRA_MCP_TOKEN",
       ], env),
-      github: feature("source:github", "source", "GitHub", "Code, commits, deployments, PRs, and workflow runs through gh.", [
-        "GITHUB_TOKEN",
-      ], env),
+      github: githubFeature(env),
       coralogix: feature("source:coralogix", "source", "Coralogix", "Logs, metrics, traces, and alerts through cx CLI.", [
         "CX_API_KEY",
         "CX_REGION",
@@ -80,6 +80,22 @@ export function listFeatures(registry: FeatureRegistry): Feature[] {
     registry.sources.coralogix,
     registry.sources.postgres,
   ];
+}
+
+function githubFeature(env: NodeJS.ProcessEnv): Feature {
+  const hasToken = Boolean(env.GITHUB_TOKEN?.trim());
+  const hasApp = hasGitHubAppCredentials(env);
+  const missingEnv = hasToken || hasApp ? [] : ["GITHUB_TOKEN", ...missingGitHubAppCredentials(env)];
+
+  return {
+    id: "source:github",
+    kind: "source",
+    name: "GitHub",
+    description: "Code, commits, deployments, PRs, and workflow runs through gh.",
+    requiredEnv: ["GITHUB_TOKEN", "GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY"],
+    missingEnv,
+    enabled: missingEnv.length === 0,
+  };
 }
 
 function getFeature(registry: FeatureRegistry, featureId: FeatureId): Feature {
