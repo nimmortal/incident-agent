@@ -14,7 +14,8 @@ export class HermesRunner {
 
   run(prompt: string, extraArgs: string[] = [], options: HermesRunOptions = {}): Promise<string> {
     return new Promise((resolve, reject) => {
-      const args = [...withoutQueryFlag(this.args), ...extraArgs, ...sessionArgs(options), "-q", prompt];
+      const baseArgs = withoutQueryFlag(options.streamOutput ? withoutQuietFlag(this.args) : this.args);
+      const args = [...baseArgs, ...extraArgs, ...sessionArgs(options), "-q", prompt];
       console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
 
       const child = spawn(this.binary, args, {
@@ -57,6 +58,7 @@ export class HermesRunner {
 export interface HermesRunOptions {
   continueSession?: boolean | string;
   resumeSessionId?: string;
+  streamOutput?: boolean;
 }
 
 function sessionArgs(options: HermesRunOptions): string[] {
@@ -99,6 +101,10 @@ function withoutQueryFlag(args: string[]): string[] {
   }
 
   return normalized;
+}
+
+function withoutQuietFlag(args: string[]): string[] {
+  return args.filter((arg) => arg !== "--quiet" && arg !== "-Q");
 }
 
 function displayCommand(binary: string, args: string[]): string {

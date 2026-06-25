@@ -354,6 +354,17 @@ Hermes `--resume <session-id>`. `--continue-session` maps to Hermes
 `--continue` for the most recent session. `--session-name` maps to Hermes
 `--continue <session-name>`. Hermes prints session information on exit.
 
+Output options:
+
+```bash
+npm run agent -- ask --stream <request>
+```
+
+`--stream` removes Hermes `--quiet` for that run so Hermes can show live
+terminal output, including token streaming and tool progress when Hermes and the
+selected provider emit it. The wrapper already forwards Hermes stdout and stderr
+as chunks arrive.
+
 Command behavior:
 
 - `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
@@ -366,6 +377,19 @@ Command behavior:
 `HERMES_ARGS` defaults to `chat --quiet -q`. Hermes `--quiet` is for
 programmatic use: it suppresses the banner, spinner, and tool previews while
 still outputting the final response and session info.
+
+Reasoning controls are passed through the generated Hermes config:
+
+```bash
+HERMES_REASONING_EFFORT=medium
+HERMES_SHOW_REASONING=false
+HERMES_REASONING_FULL=false
+```
+
+`HERMES_REASONING_EFFORT` accepts `none`, `minimal`, `low`, `medium`, `high`,
+or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
+controls whether Hermes displays model reasoning when the provider returns it;
+keep it off for normal incident comments.
 
 ## Features
 

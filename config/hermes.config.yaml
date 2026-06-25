@@ -2,6 +2,13 @@ model:
   provider: "copilot"
   default: "gpt-5.4"
 
+agent:
+  reasoning_effort: "${HERMES_REASONING_EFFORT}"
+
+display:
+  show_reasoning: ${HERMES_SHOW_REASONING}
+  reasoning_full: ${HERMES_REASONING_FULL}
+
 mcp_servers:
   jira:
     url: "${JIRA_MCP_URL}"

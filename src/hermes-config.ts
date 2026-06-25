@@ -12,6 +12,9 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
+    HERMES_REASONING_EFFORT: process.env.HERMES_REASONING_EFFORT ?? "",
+    HERMES_SHOW_REASONING: process.env.HERMES_SHOW_REASONING || "false",
+    HERMES_REASONING_FULL: process.env.HERMES_REASONING_FULL || "false",
   });
 }
 

@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     prompt: string,
     requiredFeatures: FeatureId[] = [],
     skills: string[] = [],
-    options: CliSessionOptions = {},
+    options: CliRunOptions = {},
   ): Promise<void> => {
     const { hermes, settings } = await getRuntime();
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
@@ -64,8 +64,9 @@ async function main(): Promise<void> {
     .addOption(sessionOption())
     .addOption(continueSessionOption())
     .addOption(sessionNameOption())
+    .addOption(streamOption())
     .argument("<request...>", "request text")
-    .action(async (request: string[], options: CliSessionOptions) => {
+    .action(async (request: string[], options: CliRunOptions) => {
       const { settings } = await getRuntime();
       return runPrompt(freeformPrompt(joinWords(request), settings), [], optionalSourceSkills(settings), options);
     });
@@ -76,8 +77,9 @@ async function main(): Promise<void> {
     .addOption(sessionOption())
     .addOption(continueSessionOption())
     .addOption(sessionNameOption())
+    .addOption(streamOption())
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string, options: CliSessionOptions) =>
+    .action(async (issueKey: string, options: CliRunOptions) =>
       runPrompt(jiraTicketPrompt(issueKey), ["source:jira-jsm"], [], options),
     );
 
@@ -87,9 +89,10 @@ async function main(): Promise<void> {
     .addOption(sessionOption())
     .addOption(continueSessionOption())
     .addOption(sessionNameOption())
+    .addOption(streamOption())
     .option("--window <time-window>", "time window to inspect")
     .argument("<query...>", "log, trace, or metric query")
-    .action(async (query: string[], options: CliSessionOptions & { window?: string }) =>
+    .action(async (query: string[], options: CliRunOptions & { window?: string }) =>
       runPrompt(logsPrompt(joinWords(query), options.window), ["source:coralogix"], [...coralogixSkills], options),
     );
 
@@ -99,8 +102,9 @@ async function main(): Promise<void> {
     .addOption(sessionOption())
     .addOption(continueSessionOption())
     .addOption(sessionNameOption())
+    .addOption(streamOption())
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string, options: CliSessionOptions) => {
+    .action(async (issueKey: string, options: CliRunOptions) => {
       const { settings } = await getRuntime();
       return runPrompt(incidentPrompt(issueKey, settings), ["source:jira-jsm"], optionalSourceSkills(settings), options);
     });
@@ -111,7 +115,8 @@ async function main(): Promise<void> {
     .addOption(sessionOption())
     .addOption(continueSessionOption())
     .addOption(sessionNameOption())
-    .action(async (options: CliSessionOptions) => {
+    .addOption(streamOption())
+    .action(async (options: CliRunOptions) => {
       const { settings } = await getRuntime();
       return runPrompt(pollPrompt(settings), ["source:jira-jsm"], optionalSourceSkills(settings), options);
     });
@@ -122,10 +127,11 @@ async function main(): Promise<void> {
   await program.parseAsync(process.argv);
 }
 
-interface CliSessionOptions {
+interface CliRunOptions {
   session?: string;
   continueSession?: boolean;
   sessionName?: string;
+  stream?: boolean;
 }
 
 function sessionOption(): ReturnType<Command["createOption"]> {
@@ -140,7 +146,11 @@ function sessionNameOption(): ReturnType<Command["createOption"]> {
   return new Command().createOption("--session-name <session-name>", "continue a Hermes session by name");
 }
 
-function sessionOptions(options: CliSessionOptions): HermesRunOptions {
+function streamOption(): ReturnType<Command["createOption"]> {
+  return new Command().createOption("--stream", "show Hermes output as it is produced instead of quiet final-response mode");
+}
+
+function sessionOptions(options: CliRunOptions): HermesRunOptions {
   if (options.session && (options.continueSession || options.sessionName)) {
     throw new Error("Use either --session, --continue-session, or --session-name");
   }
@@ -150,6 +160,7 @@ function sessionOptions(options: CliSessionOptions): HermesRunOptions {
   return {
     resumeSessionId: options.session,
     continueSession: options.sessionName ?? options.continueSession,
+    streamOutput: options.stream,
   };
 }
 
