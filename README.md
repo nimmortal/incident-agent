@@ -341,6 +341,19 @@ npm run agent -- poll-once
 npm run poll
 ```
 
+Session options:
+
+```bash
+npm run agent -- ask --session <session-id> <request>
+npm run agent -- ask --continue-session <request>
+npm run agent -- ask --session-name <session-name> <request>
+```
+
+By default, every command starts a new Hermes chat run. `--session` maps to
+Hermes `--resume <session-id>`. `--continue-session` maps to Hermes
+`--continue` for the most recent session. `--session-name` maps to Hermes
+`--continue <session-name>`. Hermes prints session information on exit.
+
 Command behavior:
 
 - `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
@@ -349,6 +362,10 @@ Command behavior:
 - `investigate`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
+
+`HERMES_ARGS` defaults to `chat --quiet -q`. Hermes `--quiet` is for
+programmatic use: it suppresses the banner, spinner, and tool previews while
+still outputting the final response and session info.
 
 ## Features
 

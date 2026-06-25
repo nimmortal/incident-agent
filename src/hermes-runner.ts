@@ -12,9 +12,9 @@ export class HermesRunner {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
-  run(prompt: string, extraArgs: string[] = []): Promise<string> {
+  run(prompt: string, extraArgs: string[] = [], options: HermesRunOptions = {}): Promise<string> {
     return new Promise((resolve, reject) => {
-      const args = [...withoutQueryFlag(this.args), ...extraArgs, "-q", prompt];
+      const args = [...withoutQueryFlag(this.args), ...extraArgs, ...sessionArgs(options), "-q", prompt];
       console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
 
       const child = spawn(this.binary, args, {
@@ -52,6 +52,27 @@ export class HermesRunner {
       });
     });
   }
+}
+
+export interface HermesRunOptions {
+  continueSession?: boolean | string;
+  resumeSessionId?: string;
+}
+
+function sessionArgs(options: HermesRunOptions): string[] {
+  if (options.resumeSessionId && options.continueSession) {
+    throw new Error("Use either --session or --continue-session, not both");
+  }
+  if (options.resumeSessionId) {
+    return ["--resume", options.resumeSessionId];
+  }
+  if (typeof options.continueSession === "string") {
+    return ["--continue", options.continueSession];
+  }
+  if (options.continueSession) {
+    return ["--continue"];
+  }
+  return [];
 }
 
 function appendOutputTail(current: string, chunk: string): string {
