@@ -17,6 +17,8 @@ RUN mkdir -p /home/agent/.local/bin \
 # Hermes installer behavior can change, so this is intentionally isolated.
 # If it becomes interactive, install Hermes locally and replace this with a pinned release.
 RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+COPY scripts/patch-hermes-copilot.py /tmp/patch-hermes-copilot.py
+RUN /usr/local/lib/hermes-agent/venv/bin/python /tmp/patch-hermes-copilot.py
 
 RUN mkdir -p /tmp/cx-skills "${HERMES_SKILLS_SEED_HOME}/.hermes/skills" \
   && cd /tmp/cx-skills \

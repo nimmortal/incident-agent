@@ -234,6 +234,12 @@ Supported Copilot token options:
 - GitHub App token (`ghu_*`).
 - Fine-grained PAT (`github_pat_*`) owned by your personal account, not an organization, with the Account > Copilot Requests permission.
 
+The Docker image patches Hermes' Copilot request headers to send
+`Copilot-Integration-Id: copilot-developer-cli` by default. This is required for
+some fine-grained PAT flows that otherwise fail with `Personal Access Tokens are
+not supported for this endpoint`. Override with `COPILOT_INTEGRATION_ID` only if
+GitHub or Hermes changes the required integration id.
+
 If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup. GitHub App installation tokens (`ghs_*`) are generated only for `gh` and repository/API access, not for Copilot auth.
 
 Required only for Jira/JSM commands:
