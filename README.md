@@ -263,8 +263,12 @@ credentials in `.env.local`; Hermes can then call `gh` without relying on an
 interactive login session. When GitHub App credentials are present, the wrapper
 generates a `ghs_*` installation token at startup, sets it as `GITHUB_TOKEN` for
 the Hermes child process, and clears `GH_TOKEN` for that child so `gh` does not
-prefer a stale token. The private key must be the `.pem` downloaded from the
-GitHub App settings, not the webhook secret or client secret.
+prefer a stale token. Hermes strips `GITHUB_TOKEN` from terminal subprocesses as
+a tool secret, so the wrapper also writes a `gh` hosts file under
+`HERMES_RUNTIME_HOME` and sets `GH_CONFIG_DIR` for Hermes. This lets Hermes use
+`gh` without exposing the token as a terminal environment variable. The private
+key must be the `.pem` downloaded from the GitHub App settings, not the webhook
+secret or client secret.
 
 Preferred GitHub App setup when the app has one installation:
 

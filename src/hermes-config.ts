@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
@@ -8,7 +8,7 @@ import { managedSkillTargets } from "./skill-sets.ts";
 export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
   writeRuntimeConfig(settings);
   seedHermesSkills(settings);
-  return applyGitHubAppToken({
+  const env = await applyGitHubAppToken({
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
@@ -16,6 +16,8 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HERMES_SHOW_REASONING: process.env.HERMES_SHOW_REASONING || "false",
     HERMES_REASONING_FULL: process.env.HERMES_REASONING_FULL || "false",
   });
+  configureGitHubCliAuth(settings, env);
+  return env;
 }
 
 export function runtimeConfigPath(settings: Settings): string {
@@ -32,6 +34,10 @@ export function runtimeHermesHome(settings: Settings): string {
 
 export function runtimeHome(settings: Settings): string {
   return resolve(settings.hermesRuntimeHome);
+}
+
+export function gitHubCliConfigPath(settings: Settings): string {
+  return join(runtimeHome(settings), ".config", "gh");
 }
 
 export function skillsSeedPath(settings: Settings): string {
@@ -103,6 +109,37 @@ function seedHermesSkills(settings: Settings): void {
     mkdirSync(dirname(targetPath), { recursive: true });
     cpSync(sourcePath, targetPath, { recursive: true });
   }
+}
+
+function configureGitHubCliAuth(settings: Settings, env: NodeJS.ProcessEnv): void {
+  const token = env.GITHUB_TOKEN?.trim();
+  if (!token) {
+    return;
+  }
+
+  const configDir = gitHubCliConfigPath(settings);
+  mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  chmodSync(configDir, 0o700);
+
+  const hostsPath = join(configDir, "hosts.yml");
+  writeFileSync(
+    hostsPath,
+    [
+      "github.com:",
+      `  oauth_token: ${yamlString(token)}`,
+      "  user: incident-agent",
+      "  git_protocol: https",
+      "",
+    ].join("\n"),
+    { mode: 0o600 },
+  );
+  chmodSync(hostsPath, 0o600);
+
+  env.GH_CONFIG_DIR = configDir;
+}
+
+function yamlString(value: string): string {
+  return JSON.stringify(value);
 }
 
 function setMcpServerEnabled(config: string, serverName: string, enabled: boolean): string {
