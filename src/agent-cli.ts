@@ -3,7 +3,16 @@ import { loadSettings, validateSettings, type Settings } from "./config.ts";
 import { requireFeatures, type FeatureId } from "./features.ts";
 import { buildHermesEnvironment } from "./hermes-config.ts";
 import { HermesRunner, type HermesRunOptions } from "./hermes-runner.ts";
-import { freeformPrompt, incidentPrompt, jiraTicketPrompt, logsPrompt, pollPrompt } from "./prompts.ts";
+import { createInvestigationJournal, type InvestigationJournal, type InvestigationPhase } from "./investigation-journal.ts";
+import {
+  freeformPrompt,
+  incidentEvidencePrompt,
+  incidentSynthesisPrompt,
+  incidentTriagePrompt,
+  jiraTicketPrompt,
+  logsPrompt,
+  pollPrompt,
+} from "./prompts.ts";
 import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { coralogixSkills, optionalSourceSkills, skillArgs } from "./skill-sets.ts";
 
@@ -25,10 +34,58 @@ async function main(): Promise<void> {
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
     requireCopilotTokenSupported();
     requireRuntimeForSkills(settings, skills);
-    const result = await hermes.run(prompt, skillArgs(skills), sessionOptions(options));
-    if (result) {
-      console.log(result);
+    await hermes.run(prompt, skillArgs(skills), sessionOptions(options));
+  };
+
+  const runInvestigationPhase = async (
+    phase: InvestigationPhase,
+    prompt: string,
+    journal: InvestigationJournal,
+    skills: string[],
+    options: CliRunOptions,
+  ): Promise<string> => {
+    const { hermes, settings } = await getRuntime();
+    requireRuntimeForSkills(settings, skills);
+    journal.append({ type: "phase_started", phase, prompt });
+    try {
+      const output = await hermes.run(prompt, skillArgs(skills), { streamOutput: options.stream });
+      journal.append({ type: "phase_completed", phase, output });
+      return output || "(phase completed without captured stdout)";
+    } catch (error) {
+      journal.append({ type: "phase_failed", phase, error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
+  };
+
+  const runPhasedInvestigation = async (issueKey: string, options: CliRunOptions): Promise<void> => {
+    if (options.session || options.continueSession || options.sessionName) {
+      throw new Error("Phased investigate creates bounded fresh Hermes phases; --session, --continue-session, and --session-name are not supported");
+    }
+
+    const { settings } = await getRuntime();
+    requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
+    requireCopilotTokenSupported();
+    const skills = optionalSourceSkills(settings);
+    requireRuntimeForSkills(settings, skills);
+
+    const journal = createInvestigationJournal(settings, issueKey);
+    console.error(`[incident-agent] Investigation journal: ${journal.path}`);
+
+    const triageBrief = await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options);
+    const evidenceBrief = await runInvestigationPhase(
+      "evidence",
+      incidentEvidencePrompt(issueKey, settings, triageBrief, journal.path),
+      journal,
+      skills,
+      options,
+    );
+    await runInvestigationPhase(
+      "synthesis",
+      incidentSynthesisPrompt(issueKey, settings, triageBrief, evidenceBrief, journal.path),
+      journal,
+      skills,
+      options,
+    );
   };
 
   const getRuntime = (): Promise<Runtime> => {
@@ -99,15 +156,9 @@ async function main(): Promise<void> {
   program
     .command("investigate")
     .description("Investigate a Jira/JSM ticket end to end")
-    .addOption(sessionOption())
-    .addOption(continueSessionOption())
-    .addOption(sessionNameOption())
     .addOption(streamOption())
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string, options: CliRunOptions) => {
-      const { settings } = await getRuntime();
-      return runPrompt(incidentPrompt(issueKey, settings), ["source:jira-jsm"], optionalSourceSkills(settings), options);
-    });
+    .action(async (issueKey: string, options: CliRunOptions) => runPhasedInvestigation(issueKey, options));
 
   program
     .command("poll-once")

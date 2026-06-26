@@ -7,6 +7,8 @@ The first version is intentionally simple:
 - exposes a small CLI for ad-hoc investigation commands
 - uses Hermes cron and gateway to poll Jira/JSM through MCP
 - delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
+- runs end-to-end ticket investigation in triage, evidence, and synthesis phases
+- writes compact investigation journals under `./data/investigations`
 - keeps the wrapper limited to scheduling and prompt construction
 
 ## Setup
@@ -366,6 +368,10 @@ Hermes `--resume <session-id>`. `--continue-session` maps to Hermes
 `--continue` for the most recent session. `--session-name` maps to Hermes
 `--continue <session-name>`. Hermes prints session information on exit.
 
+The `investigate` command is intentionally different: it runs fresh bounded
+Hermes phases and passes compact phase outputs forward, so `--session`,
+`--continue-session`, and `--session-name` are not supported there.
+
 Output options:
 
 ```bash
@@ -382,7 +388,7 @@ Command behavior:
 - `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
 - `ticket`: requires GitHub Copilot and Jira/JSM.
 - `logs`: requires GitHub Copilot and Coralogix.
-- `investigate`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
+- `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
 
@@ -421,6 +427,34 @@ file changes, never wait for human approval, and report partial evidence when
 blocked. Keep `HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE=false` for unattended
 runs; changing it to `true` allows delegated workers to approve dangerous shell
 commands without a human in the loop.
+
+For expensive evidence gathering, treat the main Hermes agent as the incident
+orchestrator, not the place where every raw result should accumulate. Broad log
+queries, uncertain Coralogix query construction, service-by-service comparisons,
+large trace searches, and broad code searches should be delegated to focused
+read-only subagents. Each subagent should return only a bounded summary: query
+or command used, inspected time range, top patterns with counts, a few
+representative timestamps or trace IDs, confidence, and unknowns. The parent
+keeps the timeline, RCA synthesis, Jira state transitions, and final comment.
+
+The prompt contract includes fixed scout templates for log, GitHub, and
+Postgres deep dives. Delegated scouts receive one narrow goal, bounded context,
+read-only tool constraints, and a required compact return shape. This keeps
+uncertain query construction and high-volume source exploration out of the
+parent context.
+
+End-to-end `investigate` runs are split into three wrapper-orchestrated phases:
+
+- `triage`: read Jira/JSM and produce a compact ticket brief.
+- `evidence`: use the triage brief to delegate bounded source scouts and
+  produce an evidence brief.
+- `synthesis`: use the two briefs to prepare the internal RCA or incomplete
+  investigation note.
+
+Each phase writes a JSONL event stream to
+`INVESTIGATION_JOURNAL_DIR/<issue-key>/<run-id>.jsonl`, defaulting to
+`data/investigations`. The journal is for recovery and audit, not for storing
+large raw logs.
 
 ## Features
 

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { copilotAuthFailureHint } from "./runtime-preflight.ts";
 
 const outputTailLimit = 8_000;
+const capturedOutputLimit = 64_000;
 
 export class HermesRunner {
   constructor(
@@ -31,9 +32,11 @@ export class HermesRunner {
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       let outputTail = "";
+      let capturedOutput = "";
       child.stdout.on("data", (chunk) => {
         process.stdout.write(chunk);
         outputTail = appendOutputTail(outputTail, chunk);
+        capturedOutput = appendCapturedOutput(capturedOutput, chunk);
       });
       child.stderr.on("data", (chunk) => {
         process.stderr.write(chunk);
@@ -49,7 +52,7 @@ export class HermesRunner {
           reject(new Error([`Hermes exited with code ${code}. Output was streamed above.`, copilotAuthFailureHint(outputTail)].filter(Boolean).join("\n\n")));
           return;
         }
-        resolve("");
+        resolve(capturedOutput.trim());
       });
     });
   }
@@ -80,6 +83,11 @@ function sessionArgs(options: HermesRunOptions): string[] {
 function appendOutputTail(current: string, chunk: string): string {
   const next = current + chunk;
   return next.length > outputTailLimit ? next.slice(-outputTailLimit) : next;
+}
+
+function appendCapturedOutput(current: string, chunk: string): string {
+  const next = current + chunk;
+  return next.length > capturedOutputLimit ? next.slice(-capturedOutputLimit) : next;
 }
 
 function withoutQueryFlag(args: string[]): string[] {
