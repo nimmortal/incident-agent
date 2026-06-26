@@ -9,6 +9,19 @@ display:
   show_reasoning: ${HERMES_SHOW_REASONING}
   reasoning_full: ${HERMES_REASONING_FULL}
 
+delegation:
+  model: "${HERMES_DELEGATION_MODEL}"
+  provider: "${HERMES_DELEGATION_PROVIDER}"
+  reasoning_effort: "${HERMES_DELEGATION_REASONING_EFFORT}"
+  max_iterations: ${HERMES_DELEGATION_MAX_ITERATIONS}
+  child_timeout_seconds: ${HERMES_DELEGATION_CHILD_TIMEOUT_SECONDS}
+  max_concurrent_children: ${HERMES_DELEGATION_MAX_CONCURRENT_CHILDREN}
+  max_async_children: ${HERMES_DELEGATION_MAX_ASYNC_CHILDREN}
+  max_spawn_depth: ${HERMES_DELEGATION_MAX_SPAWN_DEPTH}
+  subagent_auto_approve: ${HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE}
+  inherit_mcp_toolsets: true
+  orchestrator_enabled: true
+
 mcp_servers:
   jira:
     url: "${JIRA_MCP_URL}"

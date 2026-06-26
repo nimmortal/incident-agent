@@ -395,6 +395,25 @@ or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
 controls whether Hermes displays model reasoning when the provider returns it;
 keep it off for normal incident comments.
 
+Subagent delegation is enabled through Hermes' `delegate_task` tool for focused
+deep dives. The wrapper config keeps subagents autonomous and conservative by
+default:
+
+```bash
+HERMES_DELEGATION_MAX_ITERATIONS=30
+HERMES_DELEGATION_CHILD_TIMEOUT_SECONDS=600
+HERMES_DELEGATION_MAX_CONCURRENT_CHILDREN=2
+HERMES_DELEGATION_MAX_SPAWN_DEPTH=1
+HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE=false
+```
+
+Subagents run with fresh context and return compact findings to the parent.
+They are instructed to stay read-only, avoid Jira/comment/label writes, avoid
+file changes, never wait for human approval, and report partial evidence when
+blocked. Keep `HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE=false` for unattended
+runs; changing it to `true` allows delegated workers to approve dangerous shell
+commands without a human in the loop.
+
 ## Features
 
 The local wrapper treats capabilities as provider/source modules:
