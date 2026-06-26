@@ -9,7 +9,8 @@ export class HermesRunner {
   constructor(
     private readonly binary: string,
     private readonly args: string[],
-    private readonly timeoutSeconds: number,
+    private readonly maxRuntimeSeconds: number,
+    private readonly heartbeatSeconds: number,
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
@@ -18,44 +19,134 @@ export class HermesRunner {
       const baseArgs = withoutQueryFlag(options.streamOutput ? withoutQuietFlag(this.args) : this.args);
       const args = [...baseArgs, ...extraArgs, ...sessionArgs(options), "-q", prompt];
       console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
+      const startedAt = Date.now();
+      let lastOutputAt = startedAt;
+      let settled = false;
+      let timedOut = false;
+      let forceKillTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(this.binary, args, {
         env: this.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
 
-      const timeout = setTimeout(() => {
+      let outputTail = "";
+      let capturedOutput = "";
+
+      const stopTimers = (): void => {
+        clearTimeout(maxRuntimeTimer);
+        clearInterval(heartbeatTimer);
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+        }
+      };
+      const rejectRun = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        stopTimers();
+        reject(error);
+      };
+      const resolveRun = (output: string): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        stopTimers();
+        resolve(output);
+      };
+      const observeOutput = (): void => {
+        lastOutputAt = Date.now();
+      };
+
+      const maxRuntimeTimer = setTimeout(() => {
+        timedOut = true;
+        console.error(`[incident-agent] Hermes exceeded max runtime of ${this.maxRuntimeSeconds}s; stopping child process`);
         child.kill("SIGTERM");
-        reject(new Error(`Hermes timed out after ${this.timeoutSeconds} seconds`));
-      }, this.timeoutSeconds * 1000);
+        forceKillTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, 10_000);
+      }, this.maxRuntimeSeconds * 1000);
+
+      const heartbeatTimer = setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+        const idleSeconds = Math.floor((Date.now() - lastOutputAt) / 1000);
+        console.error(`[incident-agent] Hermes still running after ${elapsedSeconds}s; last output ${idleSeconds}s ago`);
+      }, this.heartbeatSeconds * 1000);
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
-      let outputTail = "";
-      let capturedOutput = "";
       child.stdout.on("data", (chunk) => {
+        observeOutput();
         process.stdout.write(chunk);
         outputTail = appendOutputTail(outputTail, chunk);
         capturedOutput = appendCapturedOutput(capturedOutput, chunk);
       });
       child.stderr.on("data", (chunk) => {
+        observeOutput();
         process.stderr.write(chunk);
         outputTail = appendOutputTail(outputTail, chunk);
       });
       child.on("error", (error) => {
-        clearTimeout(timeout);
-        reject(error);
+        rejectRun(error);
       });
       child.on("close", (code) => {
-        clearTimeout(timeout);
-        if (code !== 0) {
-          reject(new Error([`Hermes exited with code ${code}. Output was streamed above.`, copilotAuthFailureHint(outputTail)].filter(Boolean).join("\n\n")));
+        if (settled) {
           return;
         }
-        resolve(capturedOutput.trim());
+        if (timedOut) {
+          rejectRun(
+            new HermesRunError(`Hermes exceeded max runtime of ${this.maxRuntimeSeconds} seconds`, {
+              timedOut: true,
+              output: capturedOutput.trim(),
+              outputTail,
+            }),
+          );
+          return;
+        }
+        if (code !== 0) {
+          rejectRun(
+            new HermesRunError(
+              [`Hermes exited with code ${code}. Output was streamed above.`, copilotAuthFailureHint(outputTail)]
+                .filter(Boolean)
+                .join("\n\n"),
+              {
+                exitCode: code ?? undefined,
+                output: capturedOutput.trim(),
+                outputTail,
+              },
+            ),
+          );
+          return;
+        }
+        resolveRun(capturedOutput.trim());
       });
     });
   }
+}
+
+export class HermesRunError extends Error {
+  readonly exitCode?: number;
+  readonly timedOut: boolean;
+  readonly output: string;
+  readonly outputTail: string;
+
+  constructor(message: string, options: HermesRunErrorOptions = {}) {
+    super(message);
+    this.name = "HermesRunError";
+    this.exitCode = options.exitCode;
+    this.timedOut = options.timedOut ?? false;
+    this.output = options.output ?? "";
+    this.outputTail = options.outputTail ?? "";
+  }
+}
+
+interface HermesRunErrorOptions {
+  exitCode?: number;
+  timedOut?: boolean;
+  output?: string;
+  outputTail?: string;
 }
 
 export interface HermesRunOptions {

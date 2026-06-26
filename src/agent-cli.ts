@@ -2,11 +2,12 @@ import { Command } from "commander";
 import { loadSettings, validateSettings, type Settings } from "./config.ts";
 import { requireFeatures, type FeatureId } from "./features.ts";
 import { buildHermesEnvironment } from "./hermes-config.ts";
-import { HermesRunner, type HermesRunOptions } from "./hermes-runner.ts";
+import { HermesRunError, HermesRunner, type HermesRunOptions } from "./hermes-runner.ts";
 import { createInvestigationJournal, type InvestigationJournal, type InvestigationPhase } from "./investigation-journal.ts";
 import {
   freeformPrompt,
   incidentEvidencePrompt,
+  incidentPhaseRecoveryPrompt,
   incidentSynthesisPrompt,
   incidentTriagePrompt,
   jiraTicketPrompt,
@@ -46,15 +47,43 @@ async function main(): Promise<void> {
   ): Promise<string> => {
     const { hermes, settings } = await getRuntime();
     requireRuntimeForSkills(settings, skills);
-    journal.append({ type: "phase_started", phase, prompt });
-    try {
-      const output = await hermes.run(prompt, skillArgs(skills), { streamOutput: options.stream });
-      journal.append({ type: "phase_completed", phase, output });
-      return output || "(phase completed without captured stdout)";
-    } catch (error) {
-      journal.append({ type: "phase_failed", phase, error: error instanceof Error ? error.message : String(error) });
-      throw error;
+
+    let nextPrompt = prompt;
+    for (let attempt = 0; attempt <= settings.hermesRecoveryAttempts; attempt += 1) {
+      const recovery = attempt > 0;
+      journal.append({ type: "phase_started", phase, prompt: nextPrompt, attempt, recovery });
+
+      try {
+        const output = await hermes.run(nextPrompt, skillArgs(skills), { streamOutput: options.stream });
+        journal.append({ type: "phase_completed", phase, output, attempt, recovery });
+        return output || "(phase completed without captured stdout)";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const partialOutput = error instanceof HermesRunError ? error.output : "";
+        journal.append({ type: "phase_failed", phase, error: message, attempt, recovery, partialOutput });
+
+        if (attempt < settings.hermesRecoveryAttempts) {
+          console.error(`[incident-agent] Hermes ${phase} phase failed; starting recovery attempt ${attempt + 1}`);
+          nextPrompt = incidentPhaseRecoveryPrompt(
+            journal.issueKey,
+            settings,
+            phase,
+            prompt,
+            journal.readCompact(),
+            message,
+            partialOutput,
+          );
+          continue;
+        }
+
+        const fallback = phaseFallbackResult(phase, message, partialOutput);
+        journal.append({ type: "phase_fallback", phase, output: fallback });
+        console.log(fallback);
+        return fallback;
+      }
     }
+
+    throw new Error(`Unexpected recovery loop exit for ${phase}`);
   };
 
   const runPhasedInvestigation = async (issueKey: string, options: CliRunOptions): Promise<void> => {
@@ -104,6 +133,7 @@ async function main(): Promise<void> {
         settings.hermesBin,
         settings.hermesArgs,
         settings.hermesTimeoutSeconds,
+        settings.hermesHeartbeatSeconds,
         await buildHermesEnvironment(settings),
       ),
     };
@@ -221,6 +251,27 @@ function joinWords(values: string[]): string {
     throw new Error("Missing required text");
   }
   return text;
+}
+
+function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOutput: string): string {
+  return [
+    `Recovered phase: ${phase}`,
+    "",
+    "Usable findings:",
+    partialOutput || "(none captured before Hermes stopped)",
+    "",
+    "Evidence or partial evidence:",
+    partialOutput ? "See usable findings above." : "No phase evidence was captured by the wrapper.",
+    "",
+    "Confidence:",
+    "low",
+    "",
+    "What remains unknown:",
+    error,
+    "",
+    "Exact next step:",
+    "Continue with available context and produce an incomplete-investigation note if confidence remains low.",
+  ].join("\n");
 }
 
 main().catch((error: unknown) => {

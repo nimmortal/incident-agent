@@ -17,6 +17,8 @@ const settingsSchema = z.object({
   hermesSkillsSeedHome: z.string().min(1),
   hermesLocalSkillsPath: z.string().min(1),
   hermesTimeoutSeconds: z.number().int().positive(),
+  hermesHeartbeatSeconds: z.number().int().positive(),
+  hermesRecoveryAttempts: z.number().int().nonnegative(),
   investigatingLabel: z.string().min(1),
   investigatedLabel: z.string().min(1),
   failedLabel: z.string().min(1),
@@ -41,6 +43,8 @@ export function loadSettings(): Settings {
     HERMES_SKILLS_SEED_HOME: str({ default: "/opt/hermes-seed-home" }),
     HERMES_LOCAL_SKILLS_PATH: str({ default: "skills" }),
     HERMES_TIMEOUT_SECONDS: num({ default: 900 }),
+    HERMES_HEARTBEAT_SECONDS: num({ default: 60 }),
+    HERMES_RECOVERY_ATTEMPTS: num({ default: 1 }),
   });
 
   const jiraProjectKey = env.JIRA_PROJECT_KEY;
@@ -65,6 +69,8 @@ export function loadSettings(): Settings {
     hermesSkillsSeedHome: env.HERMES_SKILLS_SEED_HOME,
     hermesLocalSkillsPath: env.HERMES_LOCAL_SKILLS_PATH,
     hermesTimeoutSeconds: env.HERMES_TIMEOUT_SECONDS,
+    hermesHeartbeatSeconds: env.HERMES_HEARTBEAT_SECONDS,
+    hermesRecoveryAttempts: env.HERMES_RECOVERY_ATTEMPTS,
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",
     failedLabel: "ai-investigation-failed",

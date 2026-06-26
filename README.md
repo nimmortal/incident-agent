@@ -409,6 +409,24 @@ or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
 controls whether Hermes displays model reasoning when the provider returns it;
 keep it off for normal incident comments.
 
+Hermes process supervision is handled by the wrapper:
+
+```bash
+HERMES_TIMEOUT_SECONDS=900
+HERMES_HEARTBEAT_SECONDS=60
+HERMES_RECOVERY_ATTEMPTS=1
+```
+
+`HERMES_TIMEOUT_SECONDS` is the max runtime for one Hermes command or
+investigation phase. While the child process is still alive, the wrapper logs a
+heartbeat every `HERMES_HEARTBEAT_SECONDS` with elapsed time and time since last
+stdout/stderr output. This proves the process has not exited; it does not prove
+semantic progress inside Hermes. For `investigate`, a failed or timed-out phase
+is retried with a recovery prompt up to `HERMES_RECOVERY_ATTEMPTS` times. If
+recovery still cannot get a normal phase result, the wrapper records the failure
+in the journal and returns a low-confidence fallback brief so synthesis can
+produce an incomplete-investigation result instead of ending with no output.
+
 Subagent delegation is enabled through Hermes' `delegate_task` tool for focused
 deep dives. The wrapper config keeps subagents autonomous and conservative by
 default:

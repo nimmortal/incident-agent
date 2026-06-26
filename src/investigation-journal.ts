@@ -15,9 +15,10 @@ export interface InvestigationJournal {
 
 export type InvestigationJournalEvent =
   | { type: "run_started"; command: string }
-  | { type: "phase_started"; phase: InvestigationPhase; prompt: string }
-  | { type: "phase_completed"; phase: InvestigationPhase; output: string }
-  | { type: "phase_failed"; phase: InvestigationPhase; error: string };
+  | { type: "phase_started"; phase: InvestigationPhase; prompt: string; attempt: number; recovery: boolean }
+  | { type: "phase_completed"; phase: InvestigationPhase; output: string; attempt: number; recovery: boolean }
+  | { type: "phase_failed"; phase: InvestigationPhase; error: string; attempt: number; recovery: boolean; partialOutput?: string }
+  | { type: "phase_fallback"; phase: InvestigationPhase; output: string };
 
 export type InvestigationPhase = "triage" | "evidence" | "synthesis";
 
@@ -52,6 +53,12 @@ function compactEvent(event: InvestigationJournalEvent): InvestigationJournalEve
     return { ...event, prompt: truncate(event.prompt, maxPromptEntryChars) };
   }
   if (event.type === "phase_completed") {
+    return { ...event, output: truncate(event.output, maxPromptEntryChars) };
+  }
+  if (event.type === "phase_failed" && event.partialOutput) {
+    return { ...event, partialOutput: truncate(event.partialOutput, maxPromptEntryChars) };
+  }
+  if (event.type === "phase_fallback") {
     return { ...event, output: truncate(event.output, maxPromptEntryChars) };
   }
   return event;
