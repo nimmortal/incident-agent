@@ -12,6 +12,7 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
+    JIRA_MCP_AUTH_HEADER: jiraMcpAuthHeader(process.env),
     HERMES_REASONING_EFFORT: process.env.HERMES_REASONING_EFFORT ?? "",
     HERMES_SHOW_REASONING: process.env.HERMES_SHOW_REASONING || "false",
     HERMES_REASONING_FULL: process.env.HERMES_REASONING_FULL || "false",
@@ -118,6 +119,21 @@ function seedHermesSkills(settings: Settings): void {
     mkdirSync(dirname(targetPath), { recursive: true });
     cpSync(sourcePath, targetPath, { recursive: true });
   }
+}
+
+function jiraMcpAuthHeader(env: NodeJS.ProcessEnv): string {
+  const explicit = env.JIRA_MCP_AUTH_HEADER?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const token = env.JIRA_MCP_TOKEN?.trim();
+  if (!token) {
+    return "";
+  }
+
+  const scheme = env.JIRA_MCP_AUTH_SCHEME?.trim() || "Bearer";
+  return `${scheme} ${token}`;
 }
 
 function configureGitHubCliAuth(settings: Settings, env: NodeJS.ProcessEnv): void {

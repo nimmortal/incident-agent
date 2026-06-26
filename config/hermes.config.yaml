@@ -26,7 +26,7 @@ mcp_servers:
   jira:
     url: "${JIRA_MCP_URL}"
     headers:
-      Authorization: "Bearer ${JIRA_MCP_TOKEN}"
+      Authorization: "${JIRA_MCP_AUTH_HEADER}"
     enabled: true
     timeout: 120
     tools:

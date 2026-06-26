@@ -245,7 +245,15 @@ If Hermes still reports `Personal Access Tokens are not supported for this endpo
 Required only for Jira/JSM commands:
 
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
+- `JIRA_MCP_AUTH_SCHEME`: auth scheme for the Jira/JSM MCP endpoint. Defaults to `Bearer`; use `Basic` when `JIRA_MCP_TOKEN` is `base64(email:api-token)`.
 - `JIRA_MCP_TOKEN`: token for the Jira/JSM MCP endpoint.
+
+For a personal Atlassian API token encoded as `base64(email:api-token)`, use:
+
+```env
+JIRA_MCP_AUTH_SCHEME=Basic
+JIRA_MCP_TOKEN=<base64-email-colon-api-token>
+```
 
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
