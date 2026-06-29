@@ -247,7 +247,6 @@ docker compose run --rm incident-agent npm run agent -- poll-once
 Supported Copilot token options:
 
 - OAuth/device-flow token (`gho_*`), for example from `hermes model` or Copilot login flows.
-- GitHub App token (`ghu_*`).
 - Fine-grained PAT (`github_pat_*`) owned by your personal account, not an organization, with the Account > Copilot Requests permission.
 
 The Docker image patches Hermes' Copilot request headers to send
@@ -256,7 +255,7 @@ some fine-grained PAT flows that otherwise fail with `Personal Access Tokens are
 not supported for this endpoint`. Override with `COPILOT_INTEGRATION_ID` only if
 GitHub or Hermes changes the required integration id.
 
-If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup. GitHub App installation tokens (`ghs_*`) are generated only for `gh` and repository/API access, not for Copilot auth.
+If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup.
 
 Required only for Jira/JSM commands:
 
@@ -274,7 +273,7 @@ JIRA_MCP_TOKEN=<base64-email-colon-api-token>
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
-- `GITHUB_TOKEN`: read-only token available to `gh` inside the container. As an alternative, provide `GITHUB_APP_ID` and one private key source: `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_PRIVATE_KEY_BASE64`, or `GITHUB_APP_PRIVATE_KEY`. The wrapper will generate a short-lived installation token and expose it to `gh` as `GITHUB_TOKEN`.
+- `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
@@ -282,60 +281,12 @@ use the corresponding source:
 For GitHub CLI access, the container has `gh` installed and the image build
 seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
 repository management. Those skills prefer `gh` and fall back to lower-level
-GitHub access where appropriate. Provide either `GITHUB_TOKEN` or GitHub App
-credentials in `.env.local`; Hermes can then call `gh` without relying on an
-interactive login session. When GitHub App credentials are present, the wrapper
-generates a `ghs_*` installation token at startup, sets it as `GITHUB_TOKEN` for
-the Hermes child process, and clears `GH_TOKEN` for that child so `gh` does not
-prefer a stale token. Hermes strips `GITHUB_TOKEN` from terminal subprocesses as
-a tool secret, so the wrapper also writes a `gh` hosts file under
-`HERMES_RUNTIME_HOME` and sets `GH_CONFIG_DIR` for Hermes. This lets Hermes use
-`gh` without exposing the token as a terminal environment variable. The private
-key must be the `.pem` downloaded from the GitHub App settings, not the webhook
-secret or client secret.
-
-Preferred GitHub App setup when the app has one installation:
-
-```env
-GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-app.pem
-```
-
-If the app has multiple installations, choose one by account login:
-
-```env
-GITHUB_APP_INSTALLATION_ACCOUNT=your-user-or-org
-```
-
-If you do have a specific repository, this also works:
-
-```env
-GITHUB_APP_REPOSITORY=owner/repo
-```
-
-If you already know the correct id, `GITHUB_APP_INSTALLATION_ID` still works.
-
-Private key options:
-
-```env
-GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-app.pem
-```
-
-or:
-
-```bash
-base64 -i github-app.pem
-```
-
-```env
-GITHUB_APP_PRIVATE_KEY_BASE64=LS0tLS1CRUdJTi...
-```
-
-Inline PEM also works, but every newline must be escaped as `\n`:
-
-```env
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
-```
+GitHub access where appropriate. Provide `GITHUB_TOKEN` in `.env.local`; Hermes
+can then call `gh` without relying on an interactive login session. Hermes
+strips `GITHUB_TOKEN` from terminal subprocesses as a tool secret, so the
+wrapper also writes a `gh` hosts file under `HERMES_RUNTIME_HOME` and sets
+`GH_CONFIG_DIR` for Hermes. This lets Hermes use `gh` without exposing the token
+as a terminal environment variable.
 
 For Coralogix access, the container has `cx` installed and the image build
 installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills

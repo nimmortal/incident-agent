@@ -16,7 +16,7 @@ export function requireCopilotTokenSupported(): void {
     throw new Error(
       [
         `${token.envVar} contains a classic GitHub Personal Access Token (ghp_*), but GitHub Copilot API endpoints do not support classic PATs.`,
-        "Use a Copilot-compatible token instead: OAuth/device-flow token (gho_*), GitHub App token (ghu_*), or a fine-grained PAT (github_pat_*) with Copilot Requests permission.",
+        "Use a Copilot-compatible token instead: OAuth/device-flow token (gho_*) or a fine-grained PAT (github_pat_*) with Copilot Requests permission.",
         "Keep normal repository access in GITHUB_TOKEN; do not reuse a classic repo PAT for COPILOT_GITHUB_TOKEN.",
       ].join("\n"),
     );
@@ -45,7 +45,7 @@ export function copilotAuthFailureHint(output: string): string | undefined {
   return lines.length > 0 ? ["Copilot auth hint:", ...lines.map((line) => `- ${line}`)].join("\n") : undefined;
 }
 
-type CopilotTokenKind = "classic-pat" | "fine-grained-pat" | "oauth" | "github-app" | "unknown";
+type CopilotTokenKind = "classic-pat" | "fine-grained-pat" | "oauth" | "unknown";
 
 interface SelectedCopilotToken {
   envVar: (typeof copilotTokenEnvVars)[number];
@@ -78,10 +78,6 @@ function copilotTokenKind(value: string): CopilotTokenKind {
   if (value.startsWith("gho_")) {
     return "oauth";
   }
-  if (value.startsWith("ghu_")) {
-    return "github-app";
-  }
-
   return "unknown";
 }
 

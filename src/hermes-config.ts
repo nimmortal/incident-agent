@@ -2,13 +2,12 @@ import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rm
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
-import { applyGitHubAppToken } from "./github-app-token.ts";
 import { managedSkillTargets } from "./skill-sets.ts";
 
 export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
   writeRuntimeConfig(settings);
   seedHermesSkills(settings);
-  const env = await applyGitHubAppToken({
+  const env = {
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
@@ -25,7 +24,7 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HERMES_DELEGATION_MODEL: process.env.HERMES_DELEGATION_MODEL ?? "",
     HERMES_DELEGATION_PROVIDER: process.env.HERMES_DELEGATION_PROVIDER ?? "",
     HERMES_DELEGATION_REASONING_EFFORT: process.env.HERMES_DELEGATION_REASONING_EFFORT ?? "",
-  });
+  };
   configureGitHubCliAuth(settings, env);
   return env;
 }
