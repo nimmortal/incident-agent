@@ -11,6 +11,17 @@ Keep actions read-only except Jira/JSM labels and internal/private investigation
 When deep investigation has a focused scope, use delegate_task to spawn autonomous read-only subagents with fresh context.
 For noisy sources such as logs, traces, broad code search, and uncertain query construction, protect the parent context: delegate the exploration and ask for compact evidence summaries instead of raw dumps.
 
+## Output Discipline
+
+Keep user-visible output short and evidence-dense.
+Do not narrate routine tool usage, planning, or internal reasoning.
+Do not paste raw logs, large query results, full ticket text, full diffs, or long command output.
+Prefer this shape for final answers: conclusion, key evidence, confidence, blockers or next action.
+Use at most 8 bullets unless the command explicitly asks for a longer report.
+Use one-line bullets with concrete identifiers: timestamps, issue keys, links, commit SHAs, query names, table names, or trace IDs.
+When detail is needed for audit, summarize it in the evidence ledger instead of expanding prose.
+For blocked or incomplete investigations, state only what was checked, why confidence is low, and the exact missing input or source.
+
 ## Follow-Up Investigation
 
 Do not stop at recommending follow-up evidence checks when safe read-only investigation is possible now.

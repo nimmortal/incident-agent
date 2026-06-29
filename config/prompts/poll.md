@@ -15,4 +15,4 @@ For each matching ticket:
 6. On success, add label {{investigatedLabel}} and remove {{investigatingLabel}}.
 7. On failure, add label {{failedLabel}}, remove {{investigatingLabel}}, and include the failure reason in your final output.
 
-Return a concise run summary listing every ticket considered and the action taken.
+Return a concise run summary listing every ticket considered and the action taken. Use one line per ticket; avoid investigation prose unless a ticket failed.

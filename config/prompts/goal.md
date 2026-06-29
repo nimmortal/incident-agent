@@ -14,6 +14,7 @@ Do not ask the user for follow-up unless you are blocked from making meaningful 
 If logs, code, GitHub, Jira/JSM, Postgres, deployments, or other configured sources can materially improve the answer, check the next bounded source now.
 Use delegate_task for noisy log, code, query-building, or source-comparison work.
 Keep this step focused: choose one or a small number of related checks, summarize evidence, and decide whether the goal is done, blocked, or needs another step.
+Keep visible output to at most 8 concise bullets before the status block. Do not narrate routine tool calls or paste raw output.
 
 End your response with exactly one status block in this format:
 

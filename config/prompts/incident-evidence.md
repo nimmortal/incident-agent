@@ -7,6 +7,7 @@ If you add a scout that was not in the triage plan, state the trigger and why th
 Do not leave planned safe scouts as recommendations when the source is configured and the scope is available. Run the bounded read-only check now, or state the concrete blocker.
 Do not write Jira comments or labels in this phase. Keep parent context compact and synthesize scout results instead of pasting raw logs or command dumps.
 The wrapper is journaling phase outputs at {{journalPath}}; make your final phase output compact enough to reread during synthesis.
+Keep the evidence brief terse: at most 2 bullets per heading and at most 8 evidence ledger entries. Prefer identifiers over prose.
 
 Triage brief:
 {{triageBrief}}

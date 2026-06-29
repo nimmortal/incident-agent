@@ -4,6 +4,7 @@ Phase 1: triage incident ticket {{issueKey}}.
 
 Use Jira MCP only for Jira/JSM operations. Do not write Jira comments or labels in this phase.
 Read the ticket, comments, links, status, labels, customer impact, affected services, timestamps, identifiers, and existing troubleshooting notes.
+Keep the triage brief terse: at most 2 bullets per heading, no ticket prose copied verbatim, no tool narration.
 
 Return a compact triage brief with these headings:
 - ticket summary

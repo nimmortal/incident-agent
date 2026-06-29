@@ -17,6 +17,7 @@ If the evidence brief contains unchecked follow-ups that could materially change
 
 If evidence is sufficient, produce an internal RCA draft with summary, impact, timeline, root cause, evidence ledger, confidence, mitigation, follow-up actions, and open questions.
 If evidence is insufficient, produce an internal investigation-incomplete note with what was checked, evidence ledger, why confidence is low, and exact next evidence needed.
+Keep the note terse: at most 10 bullets total, at most 5 evidence ledger entries, and no raw logs or command output.
 
 Use this confidence rubric:
 - high: multiple independent sources agree, timestamps line up, and contradictory evidence has been checked
