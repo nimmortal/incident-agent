@@ -9,7 +9,7 @@ The first version is intentionally simple:
 - delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
 - runs end-to-end ticket investigation in triage, evidence, and synthesis phases
 - writes compact investigation journals under `./data/investigations`
-- keeps the wrapper limited to scheduling and prompt construction
+- keeps the wrapper limited to scheduling and prompt template rendering
 
 ## Setup
 
@@ -36,7 +36,8 @@ The first version is intentionally simple:
 ## Running With Docker Compose
 
 Docker Compose is the default local path. It loads `.env.local`, mounts the
-Hermes config template, and keeps generated Hermes runtime state under `./data`.
+Hermes config template, prompt templates, and local Hermes skills, and keeps
+generated Hermes runtime state under `./data`.
 
 Run one-off commands:
 
@@ -90,7 +91,8 @@ npm run doctor
 ```
 
 For local development, mount the current source into the container so you can
-test prompt or CLI changes without rebuilding the image:
+test CLI changes without rebuilding the image. Prompt templates and local
+Hermes skills are already bind-mounted by Docker Compose.
 
 ```bash
 docker compose run --rm \
@@ -116,6 +118,8 @@ Run a one-off command:
 docker run --rm \
   --env-file .env.local \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
+  -v "$PWD/config/prompts:/app/config/prompts:ro" \
+  -v "$PWD/skills:/app/skills:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- ask "Check recent logs for service api"
@@ -127,6 +131,8 @@ Run one polling cycle:
 docker run --rm \
   --env-file .env.local \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
+  -v "$PWD/config/prompts:/app/config/prompts:ro" \
+  -v "$PWD/skills:/app/skills:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- poll-once
@@ -138,6 +144,8 @@ Start periodic polling through Hermes cron and gateway:
 docker run --rm \
   --env-file .env.local \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
+  -v "$PWD/config/prompts:/app/config/prompts:ro" \
+  -v "$PWD/skills:/app/skills:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local
 ```
@@ -149,6 +157,8 @@ docker run --rm \
   --env-file .env.local \
   -v "$PWD/src:/app/src:ro" \
   -v "$PWD/config/hermes.config.yaml:/app/config/hermes.config.yaml:ro" \
+  -v "$PWD/config/prompts:/app/config/prompts:ro" \
+  -v "$PWD/skills:/app/skills:ro" \
   -v "$PWD/data:/app/data" \
   incident-agent:local \
   npm run agent -- ask "Check whether the runtime can see Jira MCP, gh, cx, psql, and source skills"
@@ -396,6 +406,22 @@ or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
 controls whether Hermes displays model reasoning when the provider returns it;
 keep it off for normal incident comments.
 
+Shared incident-investigation behavior lives in the local Hermes skill
+`skills/incident-agent` and is preloaded for wrapper commands, `npm run ui`, and
+scheduled polling. That is the part Hermes chat sessions can use directly.
+
+Command-specific prompt templates live under `config/prompts` by default and are
+rendered by the wrapper before launching Hermes. Override the directory with:
+
+```bash
+PROMPT_TEMPLATES_DIR=config/prompts
+```
+
+Templates use simple `{{variableName}}` placeholders for runtime values such as
+issue keys, feature context, JQL, phase briefs, labels, and journal paths. These
+templates are only used by wrapper commands that submit a prompt to Hermes; the
+interactive UI gets the shared behavior through the `incident-agent` skill.
+
 Hermes process supervision is handled by the wrapper:
 
 ```bash
@@ -442,11 +468,11 @@ or command used, inspected time range, top patterns with counts, a few
 representative timestamps or trace IDs, confidence, and unknowns. The parent
 keeps the timeline, RCA synthesis, Jira state transitions, and final comment.
 
-The prompt contract includes fixed scout templates for log, GitHub, and
-Postgres deep dives. Delegated scouts receive one narrow goal, bounded context,
-read-only tool constraints, and a required compact return shape. This keeps
-uncertain query construction and high-volume source exploration out of the
-parent context.
+The prompt contract in `skills/incident-agent/SKILL.md` includes fixed scout
+templates for log, GitHub, and Postgres deep dives. Delegated scouts receive one
+narrow goal, bounded context, read-only tool constraints, and a required compact
+return shape. This keeps uncertain query construction and high-volume source
+exploration out of the parent context.
 
 End-to-end `investigate` runs are split into three wrapper-orchestrated phases:
 
@@ -478,9 +504,10 @@ fail before starting Hermes.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
-feature registry, refreshes image-installed Hermes skills in the runtime Hermes
-home, refreshes repository-local Hermes skills, and checks required CLI binaries
-plus preloaded skills before starting Hermes.
+feature registry, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
+refreshes image-installed Hermes skills in the runtime Hermes home, refreshes
+repository-local Hermes skills, preloads the `incident-agent` skill, and checks
+required CLI binaries plus preloaded skills before starting Hermes.
 
 Periodic polling uses Hermes' native cron scheduler. `npm run poll` creates or
 updates the managed `incident-agent-jira-poll` job using

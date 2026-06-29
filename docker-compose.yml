@@ -6,5 +6,7 @@ services:
         required: false
     volumes:
       - ./config/hermes.config.yaml:/app/config/hermes.config.yaml:ro
+      - ./config/prompts:/app/config/prompts:ro
+      - ./skills:/app/skills:ro
       - ./data:/app/data
     command: ["npm", "run", "poll"]

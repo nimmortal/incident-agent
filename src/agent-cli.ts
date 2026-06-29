@@ -15,7 +15,7 @@ import {
   pollPrompt,
 } from "./prompts.ts";
 import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
-import { coralogixSkills, optionalSourceSkills, skillArgs } from "./skill-sets.ts";
+import { coralogixSkills, optionalSourceSkills, skillArgs, wrapperSkills } from "./skill-sets.ts";
 
 interface Runtime {
   settings: Settings;
@@ -32,10 +32,11 @@ async function main(): Promise<void> {
     options: CliRunOptions = {},
   ): Promise<void> => {
     const { hermes, settings } = await getRuntime();
+    const runSkills = wrapperSkills(skills);
     requireFeatures(settings.features, ["provider:copilot", ...requiredFeatures]);
     requireCopilotTokenSupported();
-    requireRuntimeForSkills(settings, skills);
-    await hermes.run(prompt, skillArgs(skills), sessionOptions(options));
+    requireRuntimeForSkills(settings, runSkills);
+    await hermes.run(prompt, skillArgs(runSkills), sessionOptions(options));
   };
 
   const runInvestigationPhase = async (
@@ -46,7 +47,8 @@ async function main(): Promise<void> {
     options: CliRunOptions,
   ): Promise<string> => {
     const { hermes, settings } = await getRuntime();
-    requireRuntimeForSkills(settings, skills);
+    const runSkills = wrapperSkills(skills);
+    requireRuntimeForSkills(settings, runSkills);
 
     let nextPrompt = prompt;
     for (let attempt = 0; attempt <= settings.hermesRecoveryAttempts; attempt += 1) {
@@ -54,7 +56,7 @@ async function main(): Promise<void> {
       journal.append({ type: "phase_started", phase, prompt: nextPrompt, attempt, recovery });
 
       try {
-        const output = await hermes.run(nextPrompt, skillArgs(skills), { streamOutput: options.stream });
+        const output = await hermes.run(nextPrompt, skillArgs(runSkills), { streamOutput: options.stream });
         journal.append({ type: "phase_completed", phase, output, attempt, recovery });
         return output || "(phase completed without captured stdout)";
       } catch (error) {
@@ -122,7 +124,7 @@ async function main(): Promise<void> {
     requireFeatures(settings.features, ["provider:copilot"]);
     requireCopilotTokenSupported();
 
-    const skills = optionalSourceSkills(settings);
+    const skills = wrapperSkills(optionalSourceSkills(settings));
     requireRuntimeForSkills(settings, skills);
     await hermes.runInteractive(uiArgs(options, skills));
   };
@@ -176,9 +178,10 @@ async function main(): Promise<void> {
     .addOption(sessionNameOption())
     .addOption(streamOption())
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string, options: CliRunOptions) =>
-      runPrompt(jiraTicketPrompt(issueKey), ["source:jira-jsm"], [], options),
-    );
+    .action(async (issueKey: string, options: CliRunOptions) => {
+      const { settings } = await getRuntime();
+      return runPrompt(jiraTicketPrompt(issueKey, settings), ["source:jira-jsm"], [], options);
+    });
 
   program
     .command("logs")
@@ -189,9 +192,10 @@ async function main(): Promise<void> {
     .addOption(streamOption())
     .option("--window <time-window>", "time window to inspect")
     .argument("<query...>", "log, trace, or metric query")
-    .action(async (query: string[], options: CliRunOptions & { window?: string }) =>
-      runPrompt(logsPrompt(joinWords(query), options.window), ["source:coralogix"], [...coralogixSkills], options),
-    );
+    .action(async (query: string[], options: CliRunOptions & { window?: string }) => {
+      const { settings } = await getRuntime();
+      return runPrompt(logsPrompt(joinWords(query), settings, options.window), ["source:coralogix"], [...coralogixSkills], options);
+    });
 
   program
     .command("investigate")

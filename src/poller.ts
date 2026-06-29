@@ -7,7 +7,7 @@ import { requireFeatures } from "./features.ts";
 import { buildHermesEnvironment, runtimeConfigPath } from "./hermes-config.ts";
 import { pollPrompt } from "./prompts.ts";
 import { copilotAuthFailureHint, requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
-import { optionalSourceSkills } from "./skill-sets.ts";
+import { optionalSourceSkills, wrapperSkills } from "./skill-sets.ts";
 
 const POLL_JOB_NAME = "incident-agent-jira-poll";
 
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
   requireCopilotTokenSupported();
 
-  const skills = optionalSourceSkills(settings);
+  const skills = wrapperSkills(optionalSourceSkills(settings));
   const env = await buildHermesEnvironment(settings);
   requireRuntimeForSkills(settings, skills);
   ensurePollCronJob(settings, env, skills);

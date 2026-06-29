@@ -27,6 +27,7 @@ function main(): void {
   console.log(
     `- local template: ${existsSync(settings.hermesConfigTemplatePath) ? "found" : "missing"} (${settings.hermesConfigTemplatePath})`,
   );
+  console.log(`- prompt templates: ${existsSync(settings.promptTemplatesDir) ? "found" : "missing"} (${settings.promptTemplatesDir})`);
   console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
   console.log(`- runtime home: ${runtimeHome(settings)}`);
   console.log(`- runtime skills path: ${runtimeSkillsPath(settings)}`);
