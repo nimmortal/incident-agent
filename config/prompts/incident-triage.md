@@ -21,3 +21,16 @@ For each scout in the scout plan, include:
 - identifiers, service names, repos, tables, fields, or query terms
 - expected evidence shape
 - stop condition
+
+End your response with exactly one status block in this format:
+
+<incident-agent-phase-status>
+{"status":"done","summary":"Triage brief produced with timeline anchors, identifiers, and scout plan."}
+</incident-agent-phase-status>
+
+Status rules:
+- Use "done" only when the triage brief is complete enough for evidence gathering and no material Jira/JSM read-only checks remain.
+- Use "blocked" only when missing credentials, missing identifiers, unavailable tools, unclear time windows, safety or mutation risk, source outage, or excessive scope prevents meaningful progress.
+- Use "continue" when another bounded Jira/JSM read-only check is available and likely to improve the triage brief.
+- For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
+- For "continue", include "nextPrompt" with one specific next triage action.

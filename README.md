@@ -48,6 +48,7 @@ docker compose run --rm incident-agent npm run agent -- ticket JSM-123
 docker compose run --rm incident-agent npm run agent -- logs --window "last 2 hours" "payment callback failures for tenant abc"
 docker compose run --rm incident-agent npm run goal -- --max-steps 6 "Investigate JSM-123 until RCA confidence is medium or blocked"
 docker compose run --rm incident-agent npm run investigate -- JSM-123
+docker compose run --rm incident-agent npm run investigate -- --phase-max-steps 5 JSM-123
 docker compose run --rm incident-agent npm run agent -- poll-once
 ```
 
@@ -328,7 +329,7 @@ npm run agent -- ask <request>
 npm run agent -- ticket <JSM-123>
 npm run agent -- logs [--window <time-window>] <query>
 npm run agent -- goal [--max-steps 6] <objective>
-npm run agent -- investigate <JSM-123>
+npm run agent -- investigate [--phase-max-steps 3] <JSM-123>
 npm run agent -- poll-once
 npm run agent -- ui
 npm run agent -- ui --dashboard
@@ -371,7 +372,7 @@ Command behavior:
 - `ticket`: requires GitHub Copilot and Jira/JSM.
 - `logs`: requires GitHub Copilot and Coralogix.
 - `goal`: requires GitHub Copilot. It runs repeated Hermes turns in one session until Hermes reports `done`, `blocked`, or the wrapper reaches `--max-steps`.
-- `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context.
+- `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context. Each phase uses the same `continue`, `done`, or `blocked` progress contract as goal mode.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `ui`: requires GitHub Copilot. Source tools are optional and preloaded when their environment is configured.
 - `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
@@ -453,6 +454,7 @@ HERMES_IDLE_TIMEOUT_SECONDS=300
 HERMES_TERMINATE_GRACE_SECONDS=10
 HERMES_HEARTBEAT_SECONDS=60
 HERMES_RECOVERY_ATTEMPTS=1
+INVESTIGATION_PHASE_MAX_STEPS=3
 ```
 
 `HERMES_TIMEOUT_SECONDS` is the max runtime for one Hermes command or
@@ -463,11 +465,17 @@ semantic progress inside Hermes. `HERMES_IDLE_TIMEOUT_SECONDS` stops a Hermes
 command that remains alive but produces no stdout/stderr for the configured
 period; set it to `0` to disable idle timeout. `HERMES_TERMINATE_GRACE_SECONDS`
 controls the grace period between SIGTERM and SIGKILL after max-runtime or idle
-timeouts. For `investigate`, a failed or timed-out phase is retried with a
-recovery prompt up to `HERMES_RECOVERY_ATTEMPTS` times. If recovery still cannot
-get a normal phase result, the wrapper records the failure in the journal and
-returns a low-confidence fallback brief so synthesis can produce an
-incomplete-investigation result instead of ending with no output.
+timeouts. For `investigate`, each phase turn must report `continue`, `done`, or
+`blocked`. A `continue` status repeats the same phase in the same Hermes session
+with the requested next bounded step. A `done` status advances to the next
+phase. A `blocked` status returns a low-confidence blocked brief that the next
+phase can use. `INVESTIGATION_PHASE_MAX_STEPS` caps turns per phase; the
+`investigate --phase-max-steps` option can override it for one run. A failed or
+timed-out phase step is retried with a recovery prompt up to
+`HERMES_RECOVERY_ATTEMPTS` times. If recovery still cannot get a normal phase
+result, the wrapper records the failure in the journal and returns a
+low-confidence fallback brief so synthesis can produce an incomplete
+investigation result instead of ending with no output.
 
 Subagent delegation is enabled through Hermes' `delegate_task` tool for focused
 deep dives. The wrapper config keeps subagents autonomous and conservative by
@@ -511,6 +519,12 @@ End-to-end `investigate` runs are split into three wrapper-orchestrated phases:
   produce an evidence brief.
 - `synthesis`: use the two briefs to prepare the internal RCA or incomplete
   investigation note.
+
+Within each phase Hermes must end every turn with an
+`<incident-agent-phase-status>` block. The wrapper parses that block to decide
+whether the phase should continue, advance, or stop as blocked. This gives
+`investigate` the same progress semantics as goal mode while preserving the
+fixed triage -> evidence -> synthesis workflow.
 
 Each phase writes a JSONL event stream to
 `INVESTIGATION_JOURNAL_DIR/<issue-key>/<run-id>.jsonl`, defaulting to

@@ -15,10 +15,12 @@ export interface InvestigationJournal {
 
 export type InvestigationJournalEvent =
   | { type: "run_started"; command: string }
-  | { type: "phase_started"; phase: InvestigationPhase; prompt: string; attempt: number; recovery: boolean }
-  | { type: "phase_completed"; phase: InvestigationPhase; output: string; attempt: number; recovery: boolean }
-  | { type: "phase_failed"; phase: InvestigationPhase; error: string; attempt: number; recovery: boolean; partialOutput?: string }
-  | { type: "phase_fallback"; phase: InvestigationPhase; output: string };
+  | { type: "phase_started"; phase: InvestigationPhase; prompt: string; step?: number; maxSteps?: number; attempt: number; recovery: boolean }
+  | { type: "phase_step_completed"; phase: InvestigationPhase; output: string; status: unknown; step: number; attempt: number; recovery: boolean }
+  | { type: "phase_completed"; phase: InvestigationPhase; output: string; step?: number; attempt: number; recovery: boolean }
+  | { type: "phase_blocked"; phase: InvestigationPhase; output: string; status: unknown; step: number; attempt: number; recovery: boolean }
+  | { type: "phase_failed"; phase: InvestigationPhase; error: string; step?: number; attempt: number; recovery: boolean; partialOutput?: string }
+  | { type: "phase_fallback"; phase: InvestigationPhase; output: string; step?: number; maxSteps?: number };
 
 export type InvestigationPhase = "triage" | "evidence" | "synthesis";
 
@@ -53,6 +55,12 @@ function compactEvent(event: InvestigationJournalEvent): InvestigationJournalEve
     return { ...event, prompt: truncate(event.prompt, maxPromptEntryChars) };
   }
   if (event.type === "phase_completed") {
+    return { ...event, output: truncate(event.output, maxPromptEntryChars) };
+  }
+  if (event.type === "phase_step_completed") {
+    return { ...event, output: truncate(event.output, maxPromptEntryChars) };
+  }
+  if (event.type === "phase_blocked") {
     return { ...event, output: truncate(event.output, maxPromptEntryChars) };
   }
   if (event.type === "phase_failed" && event.partialOutput) {

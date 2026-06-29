@@ -22,3 +22,16 @@ Use this confidence rubric:
 - high: multiple independent sources agree, timestamps line up, and contradictory evidence has been checked
 - medium: one strong source or multiple partial signals support the claim, with limited contradiction checks
 - low: evidence is partial, indirect, stale, or missing key source checks
+
+End your response with exactly one status block in this format:
+
+<incident-agent-phase-status>
+{"status":"done","summary":"Internal RCA or incomplete-investigation note produced."}
+</incident-agent-phase-status>
+
+Status rules:
+- Use "done" only when the RCA or incomplete-investigation note is ready and no material configured read-only checks remain for synthesis.
+- Use "blocked" only when missing credentials, missing identifiers, unavailable tools, unclear time windows, safety or mutation risk, source outage, or excessive scope prevents meaningful progress.
+- Use "continue" when another bounded read-only check is available and likely to materially change confidence before finalizing.
+- For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
+- For "continue", include "nextPrompt" with one specific next synthesis action.

@@ -27,3 +27,16 @@ For each evidence ledger entry, include:
 - command, query, issue key, commit SHA, workflow, table, timestamp, or link
 - supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low
+
+End your response with exactly one status block in this format:
+
+<incident-agent-phase-status>
+{"status":"done","summary":"Evidence brief produced with scouts, ledger, timeline, suspected root cause, and confidence."}
+</incident-agent-phase-status>
+
+Status rules:
+- Use "done" only when the evidence brief is complete enough for synthesis and no material configured read-only checks remain for this phase.
+- Use "blocked" only when missing credentials, missing identifiers, unavailable tools, unclear time windows, safety or mutation risk, source outage, or excessive scope prevents meaningful progress.
+- Use "continue" when another bounded read-only scout or source check is available and likely to improve the evidence brief.
+- For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
+- For "continue", include "nextPrompt" with one specific next evidence-gathering action.

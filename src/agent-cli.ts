@@ -45,51 +45,82 @@ async function main(): Promise<void> {
     prompt: string,
     journal: InvestigationJournal,
     skills: string[],
-    options: CliRunOptions,
+    options: InvestigationRunOptions,
   ): Promise<string> => {
     const { hermes, settings } = await getRuntime();
     const runSkills = wrapperSkills(skills);
     requireRuntimeForSkills(settings, runSkills);
 
     let nextPrompt = prompt;
-    for (let attempt = 0; attempt <= settings.hermesRecoveryAttempts; attempt += 1) {
-      const recovery = attempt > 0;
-      journal.append({ type: "phase_started", phase, prompt: nextPrompt, attempt, recovery });
+    let runOptions: HermesRunOptions = { streamOutput: options.stream };
+    const maxSteps = options.phaseMaxSteps ?? settings.investigationPhaseMaxSteps;
+    let lastOutput = "";
 
-      try {
-        const output = await hermes.run(nextPrompt, skillArgs(runSkills), { streamOutput: options.stream });
-        journal.append({ type: "phase_completed", phase, output, attempt, recovery });
-        return output || "(phase completed without captured stdout)";
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const partialOutput = error instanceof HermesRunError ? recoveryOutput(error) : "";
-        journal.append({ type: "phase_failed", phase, error: message, attempt, recovery, partialOutput });
+    for (let step = 1; step <= maxSteps; step += 1) {
+      for (let attempt = 0; attempt <= settings.hermesRecoveryAttempts; attempt += 1) {
+        const recovery = attempt > 0;
+        journal.append({ type: "phase_started", phase, prompt: nextPrompt, step, maxSteps, attempt, recovery });
+        console.error(`[incident-agent] ${phase} phase step ${step}/${maxSteps}${recovery ? ` recovery ${attempt}` : ""}`);
 
-        if (attempt < settings.hermesRecoveryAttempts) {
-          console.error(`[incident-agent] Hermes ${phase} phase failed; starting recovery attempt ${attempt + 1}`);
-          nextPrompt = incidentPhaseRecoveryPrompt(
-            journal.issueKey,
-            settings,
-            phase,
-            prompt,
-            journal.readCompact(),
-            message,
-            partialOutput,
-          );
-          continue;
+        try {
+          const output = await hermes.run(nextPrompt, skillArgs(runSkills), runOptions);
+          lastOutput = output;
+          const status = parseStepStatus(output, "phase");
+          if (!status) {
+            throw new StepStatusError("Hermes phase output did not include a valid <incident-agent-phase-status> block", output);
+          }
+
+          journal.append({ type: "phase_step_completed", phase, output, status, step, attempt, recovery });
+
+          if (status.status === "done") {
+            journal.append({ type: "phase_completed", phase, output, step, attempt, recovery });
+            return output || "(phase completed without captured stdout)";
+          }
+          if (status.status === "blocked") {
+            const blocked = phaseBlockedResult(phase, status, output);
+            journal.append({ type: "phase_blocked", phase, output: blocked, status, step, attempt, recovery });
+            console.log(blocked);
+            return blocked;
+          }
+
+          nextPrompt = phaseContinuationPrompt(phase, journal.issueKey, status, output, journal.readCompact());
+          runOptions = { continueSession: true, streamOutput: options.stream };
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const partialOutput = error instanceof HermesRunError ? recoveryOutput(error) : error instanceof StepStatusError ? error.output : "";
+          journal.append({ type: "phase_failed", phase, error: message, step, attempt, recovery, partialOutput });
+
+          if (attempt < settings.hermesRecoveryAttempts) {
+            console.error(`[incident-agent] Hermes ${phase} phase failed; starting recovery attempt ${attempt + 1}`);
+            nextPrompt = incidentPhaseRecoveryPrompt(
+              journal.issueKey,
+              settings,
+              phase,
+              prompt,
+              journal.readCompact(),
+              message,
+              partialOutput,
+            );
+            runOptions = { continueSession: true, streamOutput: options.stream };
+            continue;
+          }
+
+          const fallback = phaseFallbackResult(phase, message, partialOutput);
+          journal.append({ type: "phase_fallback", phase, output: fallback, step });
+          console.log(fallback);
+          return fallback;
         }
-
-        const fallback = phaseFallbackResult(phase, message, partialOutput);
-        journal.append({ type: "phase_fallback", phase, output: fallback });
-        console.log(fallback);
-        return fallback;
       }
     }
 
-    throw new Error(`Unexpected recovery loop exit for ${phase}`);
+    const fallback = phaseFallbackResult(phase, `Phase reached max steps (${maxSteps}) before reporting done or blocked`, lastOutput);
+    journal.append({ type: "phase_fallback", phase, output: fallback, maxSteps });
+    console.log(fallback);
+    return fallback;
   };
 
-  const runPhasedInvestigation = async (issueKey: string, options: CliRunOptions): Promise<void> => {
+  const runPhasedInvestigation = async (issueKey: string, options: InvestigationRunOptions): Promise<void> => {
     if (options.session || options.continueSession || options.sessionName) {
       throw new Error("Phased investigate creates bounded fresh Hermes phases; --session, --continue-session, and --session-name are not supported");
     }
@@ -254,8 +285,9 @@ async function main(): Promise<void> {
     .command("investigate")
     .description("Investigate a Jira/JSM ticket end to end")
     .addOption(streamOption())
+    .option("--phase-max-steps <count>", "maximum Hermes turns per investigation phase", parsePositiveInt)
     .argument("<issue-key>", "Jira/JSM issue key, for example JSM-123")
-    .action(async (issueKey: string, options: CliRunOptions) => runPhasedInvestigation(issueKey, options));
+    .action(async (issueKey: string, options: InvestigationRunOptions) => runPhasedInvestigation(issueKey, options));
 
   program
     .command("poll-once")
@@ -297,6 +329,10 @@ interface CliRunOptions {
 
 interface GoalRunOptions extends CliRunOptions {
   maxSteps: number;
+}
+
+interface InvestigationRunOptions extends CliRunOptions {
+  phaseMaxSteps?: number;
 }
 
 interface UiRunOptions extends CliRunOptions {
@@ -393,29 +429,35 @@ function joinWords(values: string[]): string {
   return text;
 }
 
-type GoalStatusValue = "continue" | "done" | "blocked";
+type StepStatusValue = "continue" | "done" | "blocked";
 
-interface GoalStatus {
-  status: GoalStatusValue;
+interface StepStatus {
+  status: StepStatusValue;
   summary: string;
   nextPrompt?: string;
   blockedBy?: string;
 }
 
-function parseGoalStatus(output: string): GoalStatus | undefined {
-  const matches = [...output.matchAll(/<incident-agent-goal-status>\s*([\s\S]*?)\s*<\/incident-agent-goal-status>/g)];
+function parseGoalStatus(output: string): StepStatus | undefined {
+  return parseStepStatus(output, "goal");
+}
+
+function parseStepStatus(output: string, scope: "goal" | "phase"): StepStatus | undefined {
+  const tag = scope === "goal" ? "incident-agent-goal-status" : "incident-agent-phase-status";
+  const pattern = new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*</${tag}>`, "g");
+  const matches = [...output.matchAll(pattern)];
   const payload = matches.at(-1)?.[1]?.trim();
   if (!payload) {
     return undefined;
   }
 
-  let parsed: Partial<GoalStatus>;
+  let parsed: Partial<StepStatus>;
   try {
-    parsed = JSON.parse(stripJsonFence(payload)) as Partial<GoalStatus>;
+    parsed = JSON.parse(stripJsonFence(payload)) as Partial<StepStatus>;
   } catch {
     return undefined;
   }
-  if (!isGoalStatusValue(parsed.status) || typeof parsed.summary !== "string" || !parsed.summary.trim()) {
+  if (!isStepStatusValue(parsed.status) || typeof parsed.summary !== "string" || !parsed.summary.trim()) {
     return undefined;
   }
   if (parsed.status === "continue" && (typeof parsed.nextPrompt !== "string" || !parsed.nextPrompt.trim())) {
@@ -437,8 +479,81 @@ function stripJsonFence(value: string): string {
   return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
-function isGoalStatusValue(value: unknown): value is GoalStatusValue {
+function isStepStatusValue(value: unknown): value is StepStatusValue {
   return value === "continue" || value === "done" || value === "blocked";
+}
+
+class StepStatusError extends Error {
+  constructor(
+    message: string,
+    readonly output: string,
+  ) {
+    super(message);
+    this.name = "StepStatusError";
+  }
+}
+
+function phaseContinuationPrompt(
+  phase: InvestigationPhase,
+  issueKey: string,
+  status: StepStatus,
+  previousOutput: string,
+  journalSnapshot: string,
+): string {
+  return [
+    `Continue the ${phase} phase for incident ticket ${issueKey}.`,
+    "",
+    "The previous phase step requested another bounded investigation step.",
+    "",
+    "Previous status:",
+    JSON.stringify(status),
+    "",
+    "Previous phase output:",
+    previousOutput,
+    "",
+    "Recent journal snapshot:",
+    journalSnapshot,
+    "",
+    "Run the nextPrompt from the previous status unless new evidence makes a different bounded check clearly more useful.",
+    "Keep this step focused and read-only. Do not write Jira comments or labels.",
+    phaseStatusInstructions(phase),
+  ].join("\n");
+}
+
+function phaseStatusInstructions(phase: InvestigationPhase): string {
+  return [
+    "",
+    "End your response with exactly one status block in this format:",
+    "",
+    "<incident-agent-phase-status>",
+    `{"status":"done","summary":"What changed in this ${phase} step."}`,
+    "</incident-agent-phase-status>",
+    "",
+    "Status rules:",
+    "- Use \"done\" only when this phase has produced its required brief and no material read-only checks remain for this phase.",
+    "- Use \"blocked\" only when missing credentials, missing identifiers, unavailable tools, unclear time windows, safety or mutation risk, source outage, or excessive scope prevents meaningful progress.",
+    "- Use \"continue\" when another bounded read-only check is available and likely to improve this phase output.",
+    "- For \"blocked\", include \"blockedBy\" with the concrete blocker and exact next input or source needed.",
+    "- For \"continue\", include \"nextPrompt\" with one specific next investigation action for this same phase.",
+  ].join("\n");
+}
+
+function phaseBlockedResult(phase: InvestigationPhase, status: StepStatus, output: string): string {
+  return [
+    `Blocked phase: ${phase}`,
+    "",
+    "Summary:",
+    status.summary,
+    "",
+    "Blocked by:",
+    status.blockedBy ?? "(unspecified blocker)",
+    "",
+    "Usable phase output:",
+    output || "(none)",
+    "",
+    "Confidence:",
+    "low",
+  ].join("\n");
 }
 
 function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOutput: string): string {

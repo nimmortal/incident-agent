@@ -25,3 +25,16 @@ Return a compact recovery brief with these headings:
 - confidence
 - what remains unknown
 - exact next step
+
+End your response with exactly one status block in this format:
+
+<incident-agent-phase-status>
+{"status":"done","summary":"Recovered a usable phase result from the journal and partial output."}
+</incident-agent-phase-status>
+
+Status rules:
+- Use "done" when the recovered brief is usable by the next phase.
+- Use "blocked" when the phase cannot be recovered enough to continue meaningfully.
+- Use "continue" only when one bounded read-only recovery check is still available and likely to produce a usable phase result.
+- For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
+- For "continue", include "nextPrompt" with one specific recovery action.

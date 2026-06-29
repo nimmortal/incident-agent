@@ -22,6 +22,7 @@ const settingsSchema = z.object({
   hermesTerminateGraceSeconds: z.number().int().positive(),
   hermesHeartbeatSeconds: z.number().int().positive(),
   hermesRecoveryAttempts: z.number().int().nonnegative(),
+  investigationPhaseMaxSteps: z.number().int().positive(),
   investigatingLabel: z.string().min(1),
   investigatedLabel: z.string().min(1),
   failedLabel: z.string().min(1),
@@ -51,6 +52,7 @@ export function loadSettings(): Settings {
     HERMES_TERMINATE_GRACE_SECONDS: num({ default: 10 }),
     HERMES_HEARTBEAT_SECONDS: num({ default: 60 }),
     HERMES_RECOVERY_ATTEMPTS: num({ default: 1 }),
+    INVESTIGATION_PHASE_MAX_STEPS: num({ default: 3 }),
   });
 
   const jiraProjectKey = env.JIRA_PROJECT_KEY;
@@ -80,6 +82,7 @@ export function loadSettings(): Settings {
     hermesTerminateGraceSeconds: env.HERMES_TERMINATE_GRACE_SECONDS,
     hermesHeartbeatSeconds: env.HERMES_HEARTBEAT_SECONDS,
     hermesRecoveryAttempts: env.HERMES_RECOVERY_ATTEMPTS,
+    investigationPhaseMaxSteps: env.INVESTIGATION_PHASE_MAX_STEPS,
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",
     failedLabel: "ai-investigation-failed",
