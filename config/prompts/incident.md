@@ -1,5 +1,3 @@
-{{baseInstructions}}
-
 {{featureContext}}
 
 Investigate incident ticket {{issueKey}}.
@@ -11,4 +9,5 @@ Required workflow:
 4. Use subagent delegation for focused deep dives when the issue points to a specific service, repository, subsystem, error signature, or code path.
 5. If Postgres is configured, use psql with the loaded Postgres skill for read-only database evidence when the ticket points to application state or records.
 6. Post no public customer response unless explicitly asked. If writing to Jira, use an internal/private note.
-7. Produce an evidence-backed RCA draft with confidence and follow-up actions.
+7. Before finalizing, run any material safe read-only follow-up checks that are possible with configured sources and available context.
+8. Produce an evidence-backed RCA draft with confidence and follow-up actions. Mark follow-up actions as checked now or blocked, and state the blocker for anything left unchecked.

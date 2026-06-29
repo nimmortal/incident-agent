@@ -1,5 +1,3 @@
-{{baseInstructions}}
-
 {{featureContext}}
 
 Recovery: the {{phase}} phase for incident ticket {{issueKey}} did not complete cleanly.

@@ -10,6 +10,8 @@ export class HermesRunner {
     private readonly binary: string,
     private readonly args: string[],
     private readonly maxRuntimeSeconds: number,
+    private readonly idleTimeoutSeconds: number,
+    private readonly terminateGraceSeconds: number,
     private readonly heartbeatSeconds: number,
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
@@ -22,7 +24,7 @@ export class HermesRunner {
       const startedAt = Date.now();
       let lastOutputAt = startedAt;
       let settled = false;
-      let timedOut = false;
+      let stopReason: HermesStopReason | undefined;
       let forceKillTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(this.binary, args, {
@@ -61,19 +63,29 @@ export class HermesRunner {
       };
 
       const maxRuntimeTimer = setTimeout(() => {
-        timedOut = true;
-        console.error(`[incident-agent] Hermes exceeded max runtime of ${this.maxRuntimeSeconds}s; stopping child process`);
-        child.kill("SIGTERM");
-        forceKillTimer = setTimeout(() => {
-          child.kill("SIGKILL");
-        }, 10_000);
+        stopChild("max-runtime", `Hermes exceeded max runtime of ${this.maxRuntimeSeconds}s`);
       }, this.maxRuntimeSeconds * 1000);
 
       const heartbeatTimer = setInterval(() => {
         const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
         const idleSeconds = Math.floor((Date.now() - lastOutputAt) / 1000);
         console.error(`[incident-agent] Hermes still running after ${elapsedSeconds}s; last output ${idleSeconds}s ago`);
+        if (this.idleTimeoutSeconds > 0 && idleSeconds >= this.idleTimeoutSeconds) {
+          stopChild("idle-timeout", `Hermes produced no output for ${idleSeconds}s`);
+        }
       }, this.heartbeatSeconds * 1000);
+
+      const stopChild = (reason: HermesStopReason, message: string): void => {
+        if (stopReason) {
+          return;
+        }
+        stopReason = reason;
+        console.error(`[incident-agent] ${message}; stopping child process`);
+        child.kill("SIGTERM");
+        forceKillTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, this.terminateGraceSeconds * 1000);
+      };
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -95,9 +107,11 @@ export class HermesRunner {
         if (settled) {
           return;
         }
-        if (timedOut) {
+        if (stopReason) {
+          const reasonText = stopReason === "idle-timeout" ? `Hermes exceeded idle timeout of ${this.idleTimeoutSeconds} seconds` : `Hermes exceeded max runtime of ${this.maxRuntimeSeconds} seconds`;
           rejectRun(
-            new HermesRunError(`Hermes exceeded max runtime of ${this.maxRuntimeSeconds} seconds`, {
+            new HermesRunError(reasonText, {
+              reason: stopReason,
               timedOut: true,
               output: capturedOutput.trim(),
               outputTail,
@@ -112,6 +126,7 @@ export class HermesRunner {
                 .filter(Boolean)
                 .join("\n\n"),
               {
+                reason: "nonzero-exit",
                 exitCode: code ?? undefined,
                 output: capturedOutput.trim(),
                 outputTail,
@@ -154,6 +169,7 @@ export class HermesRunner {
 
 export class HermesRunError extends Error {
   readonly exitCode?: number;
+  readonly reason?: HermesRunErrorReason;
   readonly timedOut: boolean;
   readonly output: string;
   readonly outputTail: string;
@@ -162,14 +178,19 @@ export class HermesRunError extends Error {
     super(message);
     this.name = "HermesRunError";
     this.exitCode = options.exitCode;
+    this.reason = options.reason;
     this.timedOut = options.timedOut ?? false;
     this.output = options.output ?? "";
     this.outputTail = options.outputTail ?? "";
   }
 }
 
+export type HermesRunErrorReason = HermesStopReason | "nonzero-exit";
+type HermesStopReason = "max-runtime" | "idle-timeout";
+
 interface HermesRunErrorOptions {
   exitCode?: number;
+  reason?: HermesRunErrorReason;
   timedOut?: boolean;
   output?: string;
   outputTail?: string;

@@ -1,5 +1,3 @@
-{{baseInstructions}}
-
 {{featureContext}}
 
 Run one polling cycle for new Jira/JSM incident tickets.

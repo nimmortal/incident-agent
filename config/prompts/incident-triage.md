@@ -1,5 +1,3 @@
-{{baseInstructions}}
-
 {{featureContext}}
 
 Phase 1: triage incident ticket {{issueKey}}.
@@ -13,5 +11,13 @@ Return a compact triage brief with these headings:
 - affected systems or services
 - timeline anchors
 - identifiers and query terms
-- likely evidence scouts to run
+- scout plan
 - immediate blockers or missing information
+
+For each scout in the scout plan, include:
+- source: Jira, Coralogix, GitHub, Postgres, or other
+- hypothesis or question
+- time window or version range
+- identifiers, service names, repos, tables, fields, or query terms
+- expected evidence shape
+- stop condition

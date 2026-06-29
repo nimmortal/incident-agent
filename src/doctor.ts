@@ -14,8 +14,9 @@ import {
 } from "./hermes-config.ts";
 import { managedSkills } from "./skill-sets.ts";
 
-function main(): void {
+async function main(): Promise<void> {
   const settings = loadSettings();
+  const verifySources = process.argv.includes("--verify-sources");
 
   console.log("Features:");
   for (const feature of listFeatures(settings.features)) {
@@ -94,6 +95,125 @@ function main(): void {
     const output = (psqlResult.stdout || psqlResult.stderr).split(/\r?\n/)[0]?.trim();
     console.log(`- psql: found (${output || "no version output"})`);
   }
+
+  if (verifySources) {
+    await verifyLiveSources();
+  }
 }
 
-main();
+async function verifyLiveSources(): Promise<void> {
+  console.log("\nLive Source Probes:");
+  await verifyJiraMcp();
+  verifyGitHub();
+  verifyCoralogix();
+  verifyPostgres();
+}
+
+async function verifyJiraMcp(): Promise<void> {
+  const url = process.env.JIRA_MCP_URL?.trim();
+  if (!url) {
+    console.log("- Jira MCP: skipped (missing JIRA_MCP_URL)");
+    return;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: jiraMcpProbeHeaders(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 401 || response.status === 403) {
+      console.log(`- Jira MCP: auth failed (${response.status})`);
+      return;
+    }
+    if (response.status >= 500) {
+      console.log(`- Jira MCP: failed (${response.status})`);
+      return;
+    }
+    console.log(`- Jira MCP: reachable (${response.status})`);
+  } catch (error) {
+    console.log(`- Jira MCP: failed (${errorMessage(error)})`);
+  }
+}
+
+function verifyGitHub(): void {
+  if (!process.env.GITHUB_TOKEN?.trim()) {
+    console.log("- GitHub: skipped (missing GITHUB_TOKEN)");
+    return;
+  }
+
+  const result = spawnSync("gh", ["auth", "status", "--hostname", "github.com"], {
+    encoding: "utf8",
+    timeout: 15_000,
+    stdio: "pipe",
+  });
+  if (result.error || result.status !== 0) {
+    console.log(`- GitHub: failed (${commandFailure(result)})`);
+    return;
+  }
+  console.log("- GitHub: authenticated");
+}
+
+function verifyCoralogix(): void {
+  if (!process.env.CX_API_KEY?.trim() || !process.env.CX_REGION?.trim()) {
+    console.log("- Coralogix: skipped (missing CX_API_KEY or CX_REGION)");
+    return;
+  }
+  console.log("- Coralogix: not probed (configure a safe account-specific read query before enabling live cx probes)");
+}
+
+function verifyPostgres(): void {
+  if (!process.env.DATABASE_URL?.trim()) {
+    console.log("- Postgres: skipped (missing DATABASE_URL)");
+    return;
+  }
+
+  const result = spawnSync(
+    "psql",
+    [
+      process.env.DATABASE_URL,
+      "-X",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "--csv",
+      "-c",
+      "BEGIN READ ONLY; SET LOCAL statement_timeout = '10s'; SELECT now(); ROLLBACK;",
+    ],
+    {
+      encoding: "utf8",
+      timeout: 15_000,
+      stdio: "pipe",
+    },
+  );
+  if (result.error || result.status !== 0) {
+    console.log(`- Postgres: failed (${commandFailure(result)})`);
+    return;
+  }
+  console.log("- Postgres: read-only query succeeded");
+}
+
+function jiraMcpProbeHeaders(): Record<string, string> {
+  const token = process.env.JIRA_MCP_TOKEN?.trim();
+  if (!token) {
+    return {};
+  }
+  const scheme = process.env.JIRA_MCP_AUTH_SCHEME?.trim() || "Bearer";
+  return { Authorization: `${scheme} ${token}` };
+}
+
+function commandFailure(result: ReturnType<typeof spawnSync>): string {
+  if (result.error) {
+    return result.error.message;
+  }
+  const output = [String(result.stderr || "").trim(), String(result.stdout || "").trim()].filter(Boolean).join("; ");
+  return output || `exit ${result.status}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+main().catch((error: unknown) => {
+  console.error(errorMessage(error));
+  process.exitCode = 1;
+});

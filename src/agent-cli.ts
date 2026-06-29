@@ -6,6 +6,7 @@ import { HermesRunError, HermesRunner, type HermesRunOptions } from "./hermes-ru
 import { createInvestigationJournal, type InvestigationJournal, type InvestigationPhase } from "./investigation-journal.ts";
 import {
   freeformPrompt,
+  goalPrompt,
   incidentEvidencePrompt,
   incidentPhaseRecoveryPrompt,
   incidentSynthesisPrompt,
@@ -61,7 +62,7 @@ async function main(): Promise<void> {
         return output || "(phase completed without captured stdout)";
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const partialOutput = error instanceof HermesRunError ? error.output : "";
+        const partialOutput = error instanceof HermesRunError ? recoveryOutput(error) : "";
         journal.append({ type: "phase_failed", phase, error: message, attempt, recovery, partialOutput });
 
         if (attempt < settings.hermesRecoveryAttempts) {
@@ -97,7 +98,7 @@ async function main(): Promise<void> {
     requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
     requireCopilotTokenSupported();
     const skills = optionalSourceSkills(settings);
-    requireRuntimeForSkills(settings, skills);
+    requireRuntimeForSkills(settings, wrapperSkills(skills));
 
     const journal = createInvestigationJournal(settings, issueKey);
     console.error(`[incident-agent] Investigation journal: ${journal.path}`);
@@ -117,6 +118,45 @@ async function main(): Promise<void> {
       skills,
       options,
     );
+  };
+
+  const runGoal = async (objective: string, options: GoalRunOptions): Promise<void> => {
+    const { hermes, settings } = await getRuntime();
+    requireFeatures(settings.features, ["provider:copilot"]);
+    requireCopilotTokenSupported();
+
+    const skills = wrapperSkills(optionalSourceSkills(settings));
+    requireRuntimeForSkills(settings, skills);
+
+    let previousStatus = "(none; this is the first goal step)";
+    let runOptions = sessionOptions(options);
+
+    for (let step = 1; step <= options.maxSteps; step += 1) {
+      console.error(`[incident-agent] Goal step ${step}/${options.maxSteps}`);
+      const output = await hermes.run(goalPrompt(objective, settings, step, options.maxSteps, previousStatus), skillArgs(skills), runOptions);
+      const status = parseGoalStatus(output);
+
+      if (!status) {
+        throw new Error("Hermes goal step did not include a valid <incident-agent-goal-status> block");
+      }
+
+      previousStatus = JSON.stringify(status);
+      if (status.status === "done") {
+        console.error("[incident-agent] Goal completed");
+        return;
+      }
+      if (status.status === "blocked") {
+        console.error("[incident-agent] Goal blocked");
+        return;
+      }
+
+      runOptions = {
+        continueSession: options.sessionName ?? true,
+        streamOutput: options.stream,
+      };
+    }
+
+    console.error(`[incident-agent] Goal stopped after ${options.maxSteps} steps; increase --max-steps to continue`);
   };
 
   const runUi = async (options: UiRunOptions): Promise<void> => {
@@ -145,6 +185,8 @@ async function main(): Promise<void> {
         settings.hermesBin,
         settings.hermesArgs,
         settings.hermesTimeoutSeconds,
+        settings.hermesIdleTimeoutSeconds,
+        settings.hermesTerminateGraceSeconds,
         settings.hermesHeartbeatSeconds,
         await buildHermesEnvironment(settings),
       ),
@@ -198,6 +240,17 @@ async function main(): Promise<void> {
     });
 
   program
+    .command("goal")
+    .description("Run a bounded multi-step Hermes investigation loop")
+    .addOption(sessionOption())
+    .addOption(continueSessionOption())
+    .addOption(sessionNameOption())
+    .addOption(streamOption())
+    .option("--max-steps <count>", "maximum Hermes turns before stopping", parsePositiveInt, 6)
+    .argument("<objective...>", "goal objective")
+    .action(async (objective: string[], options: GoalRunOptions) => runGoal(joinWords(objective), options));
+
+  program
     .command("investigate")
     .description("Investigate a Jira/JSM ticket end to end")
     .addOption(streamOption())
@@ -242,6 +295,10 @@ interface CliRunOptions {
   stream?: boolean;
 }
 
+interface GoalRunOptions extends CliRunOptions {
+  maxSteps: number;
+}
+
 interface UiRunOptions extends CliRunOptions {
   cli?: boolean;
   dashboard?: boolean;
@@ -264,6 +321,14 @@ function sessionNameOption(): ReturnType<Command["createOption"]> {
 
 function streamOption(): ReturnType<Command["createOption"]> {
   return new Command().createOption("--stream", "show Hermes output as it is produced instead of quiet final-response mode");
+}
+
+function parsePositiveInt(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Expected a positive integer, got ${value}`);
+  }
+  return parsed;
 }
 
 function sessionOptions(options: CliRunOptions): HermesRunOptions {
@@ -328,6 +393,54 @@ function joinWords(values: string[]): string {
   return text;
 }
 
+type GoalStatusValue = "continue" | "done" | "blocked";
+
+interface GoalStatus {
+  status: GoalStatusValue;
+  summary: string;
+  nextPrompt?: string;
+  blockedBy?: string;
+}
+
+function parseGoalStatus(output: string): GoalStatus | undefined {
+  const matches = [...output.matchAll(/<incident-agent-goal-status>\s*([\s\S]*?)\s*<\/incident-agent-goal-status>/g)];
+  const payload = matches.at(-1)?.[1]?.trim();
+  if (!payload) {
+    return undefined;
+  }
+
+  let parsed: Partial<GoalStatus>;
+  try {
+    parsed = JSON.parse(stripJsonFence(payload)) as Partial<GoalStatus>;
+  } catch {
+    return undefined;
+  }
+  if (!isGoalStatusValue(parsed.status) || typeof parsed.summary !== "string" || !parsed.summary.trim()) {
+    return undefined;
+  }
+  if (parsed.status === "continue" && (typeof parsed.nextPrompt !== "string" || !parsed.nextPrompt.trim())) {
+    return undefined;
+  }
+  if (parsed.status === "blocked" && (typeof parsed.blockedBy !== "string" || !parsed.blockedBy.trim())) {
+    return undefined;
+  }
+
+  return {
+    status: parsed.status,
+    summary: parsed.summary,
+    nextPrompt: typeof parsed.nextPrompt === "string" ? parsed.nextPrompt : undefined,
+    blockedBy: typeof parsed.blockedBy === "string" ? parsed.blockedBy : undefined,
+  };
+}
+
+function stripJsonFence(value: string): string {
+  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
+function isGoalStatusValue(value: unknown): value is GoalStatusValue {
+  return value === "continue" || value === "done" || value === "blocked";
+}
+
 function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOutput: string): string {
   return [
     `Recovered phase: ${phase}`,
@@ -347,6 +460,15 @@ function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOu
     "Exact next step:",
     "Continue with available context and produce an incomplete-investigation note if confidence remains low.",
   ].join("\n");
+}
+
+function recoveryOutput(error: HermesRunError): string {
+  const output = error.output.trim();
+  const tail = error.outputTail.trim();
+  if (!tail || tail === output) {
+    return output;
+  }
+  return [output, "Output tail:", tail].filter(Boolean).join("\n\n");
 }
 
 main().catch((error: unknown) => {

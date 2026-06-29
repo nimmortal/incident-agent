@@ -6,6 +6,7 @@
   "scripts": {
     "agent": "tsx src/agent-cli.ts",
     "doctor": "tsx src/doctor.ts",
+    "goal": "tsx src/agent-cli.ts goal",
     "investigate": "tsx src/agent-cli.ts investigate",
     "ui": "tsx src/agent-cli.ts ui",
     "dashboard": "tsx src/agent-cli.ts ui --dashboard",

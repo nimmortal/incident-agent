@@ -8,6 +8,7 @@ The first version is intentionally simple:
 - uses Hermes cron and gateway to poll Jira/JSM through MCP
 - delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
 - runs end-to-end ticket investigation in triage, evidence, and synthesis phases
+- runs bounded goal loops for autonomous multi-step investigation
 - writes compact investigation journals under `./data/investigations`
 - keeps the wrapper limited to scheduling and prompt template rendering
 
@@ -45,6 +46,7 @@ Run one-off commands:
 docker compose run --rm incident-agent npm run agent -- ask "Check whether service api had errors in the last 30 minutes"
 docker compose run --rm incident-agent npm run agent -- ticket JSM-123
 docker compose run --rm incident-agent npm run agent -- logs --window "last 2 hours" "payment callback failures for tenant abc"
+docker compose run --rm incident-agent npm run goal -- --max-steps 6 "Investigate JSM-123 until RCA confidence is medium or blocked"
 docker compose run --rm incident-agent npm run investigate -- JSM-123
 docker compose run --rm incident-agent npm run agent -- poll-once
 ```
@@ -325,6 +327,7 @@ npm run agent -- logs --help
 npm run agent -- ask <request>
 npm run agent -- ticket <JSM-123>
 npm run agent -- logs [--window <time-window>] <query>
+npm run agent -- goal [--max-steps 6] <objective>
 npm run agent -- investigate <JSM-123>
 npm run agent -- poll-once
 npm run agent -- ui
@@ -367,6 +370,7 @@ Command behavior:
 - `ask`: requires GitHub Copilot only. Source tools are optional and used only if the request needs them.
 - `ticket`: requires GitHub Copilot and Jira/JSM.
 - `logs`: requires GitHub Copilot and Coralogix.
+- `goal`: requires GitHub Copilot. It runs repeated Hermes turns in one session until Hermes reports `done`, `blocked`, or the wrapper reaches `--max-steps`.
 - `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
 - `ui`: requires GitHub Copilot. Source tools are optional and preloaded when their environment is configured.
@@ -393,6 +397,21 @@ runtime. When running the dashboard in Docker, publish the dashboard port with
 `-p 127.0.0.1:9119:9119` and bind Hermes to `--host 0.0.0.0` inside the
 container.
 
+Goal mode:
+
+```bash
+npm run goal -- --max-steps 6 "Investigate JSM-123 until RCA confidence is medium or blocked"
+npm run agent -- goal --session-name jsm-123-rca --stream "Investigate JSM-123 and check safe read-only follow-ups"
+```
+
+`goal` is a wrapper-managed loop, not a native Hermes daemon. Each Hermes turn
+must finish with a small status block: `continue`, `done`, or `blocked`. When
+the status is `continue`, the wrapper feeds the next bounded investigation step
+back into the same Hermes session. The loop stops on `done`, `blocked`,
+`--max-steps`, `HERMES_TIMEOUT_SECONDS`, or `HERMES_IDLE_TIMEOUT_SECONDS`.
+Use `--session-name` when you want the goal loop to use a stable Hermes session
+that can be resumed later.
+
 Reasoning controls are passed through the generated Hermes config:
 
 ```bash
@@ -409,6 +428,9 @@ keep it off for normal incident comments.
 Shared incident-investigation behavior lives in the local Hermes skill
 `skills/incident-agent` and is preloaded for wrapper commands, `npm run ui`, and
 scheduled polling. That is the part Hermes chat sessions can use directly.
+Company-specific service maps, ownership, telemetry conventions, data-safety
+rules, and escalation paths live in `skills/company-context` and are preloaded
+the same way.
 
 Command-specific prompt templates live under `config/prompts` by default and are
 rendered by the wrapper before launching Hermes. Override the directory with:
@@ -420,12 +442,15 @@ PROMPT_TEMPLATES_DIR=config/prompts
 Templates use simple `{{variableName}}` placeholders for runtime values such as
 issue keys, feature context, JQL, phase briefs, labels, and journal paths. These
 templates are only used by wrapper commands that submit a prompt to Hermes; the
-interactive UI gets the shared behavior through the `incident-agent` skill.
+interactive UI gets the shared behavior through the `incident-agent` and
+`company-context` skills.
 
 Hermes process supervision is handled by the wrapper:
 
 ```bash
 HERMES_TIMEOUT_SECONDS=900
+HERMES_IDLE_TIMEOUT_SECONDS=300
+HERMES_TERMINATE_GRACE_SECONDS=10
 HERMES_HEARTBEAT_SECONDS=60
 HERMES_RECOVERY_ATTEMPTS=1
 ```
@@ -434,11 +459,15 @@ HERMES_RECOVERY_ATTEMPTS=1
 investigation phase. While the child process is still alive, the wrapper logs a
 heartbeat every `HERMES_HEARTBEAT_SECONDS` with elapsed time and time since last
 stdout/stderr output. This proves the process has not exited; it does not prove
-semantic progress inside Hermes. For `investigate`, a failed or timed-out phase
-is retried with a recovery prompt up to `HERMES_RECOVERY_ATTEMPTS` times. If
-recovery still cannot get a normal phase result, the wrapper records the failure
-in the journal and returns a low-confidence fallback brief so synthesis can
-produce an incomplete-investigation result instead of ending with no output.
+semantic progress inside Hermes. `HERMES_IDLE_TIMEOUT_SECONDS` stops a Hermes
+command that remains alive but produces no stdout/stderr for the configured
+period; set it to `0` to disable idle timeout. `HERMES_TERMINATE_GRACE_SECONDS`
+controls the grace period between SIGTERM and SIGKILL after max-runtime or idle
+timeouts. For `investigate`, a failed or timed-out phase is retried with a
+recovery prompt up to `HERMES_RECOVERY_ATTEMPTS` times. If recovery still cannot
+get a normal phase result, the wrapper records the failure in the journal and
+returns a low-confidence fallback brief so synthesis can produce an
+incomplete-investigation result instead of ending with no output.
 
 Subagent delegation is enabled through Hermes' `delegate_task` tool for focused
 deep dives. The wrapper config keeps subagents autonomous and conservative by
@@ -469,10 +498,11 @@ representative timestamps or trace IDs, confidence, and unknowns. The parent
 keeps the timeline, RCA synthesis, Jira state transitions, and final comment.
 
 The prompt contract in `skills/incident-agent/SKILL.md` includes fixed scout
-templates for log, GitHub, and Postgres deep dives. Delegated scouts receive one
-narrow goal, bounded context, read-only tool constraints, and a required compact
-return shape. This keeps uncertain query construction and high-volume source
-exploration out of the parent context.
+templates for log, GitHub, and Postgres deep dives. Company-specific lookup
+tables and conventions belong in `skills/company-context/SKILL.md`. Delegated
+scouts receive one narrow goal, bounded context, read-only tool constraints, and
+a required compact return shape. This keeps uncertain query construction and
+high-volume source exploration out of the parent context.
 
 End-to-end `investigate` runs are split into three wrapper-orchestrated phases:
 
@@ -500,14 +530,19 @@ The local wrapper treats capabilities as provider/source modules:
 
 Run `npm run doctor` to see which modules are enabled. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
-fail before starting Hermes.
+fail before starting Hermes. Use `npm run doctor -- --verify-sources` for
+opt-in live probes of configured sources. The live probes intentionally stay
+conservative: GitHub checks `gh auth status`, Postgres runs a read-only
+`SELECT now()`, Jira MCP checks endpoint reachability/auth status, and Coralogix
+is left unprobed until a safe account-specific read query is configured.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
 feature registry, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
 refreshes image-installed Hermes skills in the runtime Hermes home, refreshes
-repository-local Hermes skills, preloads the `incident-agent` skill, and checks
-required CLI binaries plus preloaded skills before starting Hermes.
+repository-local Hermes skills, preloads the `incident-agent` and
+`company-context` skills, and checks required CLI binaries plus preloaded skills
+before starting Hermes.
 
 Periodic polling uses Hermes' native cron scheduler. `npm run poll` creates or
 updates the managed `incident-agent-jira-poll` job using

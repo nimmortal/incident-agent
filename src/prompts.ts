@@ -1,15 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
-import { runtimeSkillsPath } from "./hermes-config.ts";
-import { incidentAgentSkill } from "./skill-sets.ts";
 
 type PromptVariables = Record<string, string | number>;
 
 export function freeformPrompt(request: string, settings: Settings): string {
   return renderPrompt(settings, "freeform", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     request,
   });
@@ -17,14 +14,12 @@ export function freeformPrompt(request: string, settings: Settings): string {
 
 export function jiraTicketPrompt(issueKey: string, settings: Settings): string {
   return renderPrompt(settings, "jira-ticket", {
-    baseInstructions: baseInstructions(settings),
     issueKey,
   });
 }
 
 export function logsPrompt(query: string, settings: Settings, window?: string): string {
   return renderPrompt(settings, "logs", {
-    baseInstructions: baseInstructions(settings),
     windowInstruction: window
       ? `Time window: ${window}`
       : "If no time window is obvious, ask for one or state the assumed window clearly.",
@@ -32,9 +27,18 @@ export function logsPrompt(query: string, settings: Settings, window?: string): 
   });
 }
 
+export function goalPrompt(objective: string, settings: Settings, step: number, maxSteps: number, previousStatus: string): string {
+  return renderPrompt(settings, "goal", {
+    featureContext: featureContext(settings),
+    objective,
+    step,
+    maxSteps,
+    previousStatus,
+  });
+}
+
 export function incidentPrompt(issueKey: string, settings: Settings): string {
   return renderPrompt(settings, "incident", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     issueKey,
   });
@@ -42,7 +46,6 @@ export function incidentPrompt(issueKey: string, settings: Settings): string {
 
 export function incidentTriagePrompt(issueKey: string, settings: Settings): string {
   return renderPrompt(settings, "incident-triage", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     issueKey,
   });
@@ -50,7 +53,6 @@ export function incidentTriagePrompt(issueKey: string, settings: Settings): stri
 
 export function incidentEvidencePrompt(issueKey: string, settings: Settings, triageBrief: string, journalPath: string): string {
   return renderPrompt(settings, "incident-evidence", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     issueKey,
     triageBrief,
@@ -66,7 +68,6 @@ export function incidentSynthesisPrompt(
   journalPath: string,
 ): string {
   return renderPrompt(settings, "incident-synthesis", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     issueKey,
     triageBrief,
@@ -85,7 +86,6 @@ export function incidentPhaseRecoveryPrompt(
   partialOutput: string,
 ): string {
   return renderPrompt(settings, "incident-phase-recovery", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     issueKey,
     phase,
@@ -98,7 +98,6 @@ export function incidentPhaseRecoveryPrompt(
 
 export function pollPrompt(settings: Settings): string {
   return renderPrompt(settings, "poll", {
-    baseInstructions: baseInstructions(settings),
     featureContext: featureContext(settings),
     jiraPollBatchSize: settings.jiraPollBatchSize,
     jiraJql: settings.jiraJql,
@@ -106,10 +105,6 @@ export function pollPrompt(settings: Settings): string {
     investigatingLabel: settings.investigatingLabel,
     failedLabel: settings.failedLabel,
   });
-}
-
-function baseInstructions(settings: Settings): string {
-  return stripSkillFrontmatter(readFileSync(incidentAgentSkillPath(settings), "utf8"));
 }
 
 function renderPrompt(settings: Settings, name: string, variables: PromptVariables): string {
@@ -126,22 +121,6 @@ function renderPrompt(settings: Settings, name: string, variables: PromptVariabl
 
 function readPromptTemplate(settings: Settings, name: string): string {
   return readFileSync(join(resolve(settings.promptTemplatesDir), `${name}.md`), "utf8");
-}
-
-function stripSkillFrontmatter(content: string): string {
-  return content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
-}
-
-function incidentAgentSkillPath(settings: Settings): string {
-  const candidates = [
-    join(resolve(settings.hermesLocalSkillsPath), incidentAgentSkill, "SKILL.md"),
-    join(runtimeSkillsPath(settings), incidentAgentSkill, "SKILL.md"),
-  ];
-  const path = candidates.find((candidate) => existsSync(candidate));
-  if (!path) {
-    throw new Error(`Missing Hermes skill ${incidentAgentSkill}. Expected one of: ${candidates.join(", ")}`);
-  }
-  return path;
 }
 
 function featureContext(settings: Settings): string {
