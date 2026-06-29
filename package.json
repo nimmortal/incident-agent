@@ -7,6 +7,8 @@
     "agent": "tsx src/agent-cli.ts",
     "doctor": "tsx src/doctor.ts",
     "investigate": "tsx src/agent-cli.ts investigate",
+    "ui": "tsx src/agent-cli.ts ui",
+    "dashboard": "tsx src/agent-cli.ts ui --dashboard",
     "poll": "tsx src/poller.ts",
     "check": "tsc -p tsconfig.json"
   },

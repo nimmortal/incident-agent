@@ -117,6 +117,16 @@ async function main(): Promise<void> {
     );
   };
 
+  const runUi = async (options: UiRunOptions): Promise<void> => {
+    const { hermes, settings } = await getRuntime();
+    requireFeatures(settings.features, ["provider:copilot"]);
+    requireCopilotTokenSupported();
+
+    const skills = optionalSourceSkills(settings);
+    requireRuntimeForSkills(settings, skills);
+    await hermes.runInteractive(uiArgs(options, skills));
+  };
+
   const getRuntime = (): Promise<Runtime> => {
     if (!runtime) {
       runtime = createRuntime();
@@ -202,6 +212,19 @@ async function main(): Promise<void> {
       return runPrompt(pollPrompt(settings), ["source:jira-jsm"], optionalSourceSkills(settings), options);
     });
 
+  program
+    .command("ui")
+    .description("Start an interactive Hermes UI using the wrapper runtime")
+    .addOption(sessionOption())
+    .addOption(continueSessionOption())
+    .addOption(sessionNameOption())
+    .option("--cli", "force Hermes' classic terminal chat instead of the TUI")
+    .option("--dashboard", "start Hermes' browser dashboard instead of terminal chat")
+    .option("--host <host>", "dashboard host")
+    .option("--port <port>", "dashboard port")
+    .option("--no-open", "do not ask Hermes to open a browser for the dashboard")
+    .action(async (options: UiRunOptions) => runUi(options));
+
   if (process.argv.length <= 2) {
     program.help();
   }
@@ -213,6 +236,14 @@ interface CliRunOptions {
   continueSession?: boolean;
   sessionName?: string;
   stream?: boolean;
+}
+
+interface UiRunOptions extends CliRunOptions {
+  cli?: boolean;
+  dashboard?: boolean;
+  host?: string;
+  port?: string;
+  noOpen?: boolean;
 }
 
 function sessionOption(): ReturnType<Command["createOption"]> {
@@ -243,6 +274,46 @@ function sessionOptions(options: CliRunOptions): HermesRunOptions {
     continueSession: options.sessionName ?? options.continueSession,
     streamOutput: options.stream,
   };
+}
+
+function uiArgs(options: UiRunOptions, skills: string[]): string[] {
+  if (options.dashboard) {
+    if (options.session || options.continueSession || options.sessionName || options.cli) {
+      throw new Error("--dashboard cannot be combined with chat session options or --cli");
+    }
+
+    return [
+      "dashboard",
+      ...optionalValueFlag("--host", options.host),
+      ...optionalValueFlag("--port", options.port),
+      ...(options.noOpen ? ["--no-open"] : []),
+    ];
+  }
+
+  if (options.host || options.port || options.noOpen) {
+    throw new Error("--host, --port, and --no-open are only supported with --dashboard");
+  }
+
+  return ["chat", options.cli ? "--cli" : "--tui", ...skillArgs(skills), ...chatSessionArgs(options)];
+}
+
+function chatSessionArgs(options: CliRunOptions): string[] {
+  const parsed = sessionOptions(options);
+  if (parsed.resumeSessionId) {
+    return ["--resume", parsed.resumeSessionId];
+  }
+  if (typeof parsed.continueSession === "string") {
+    return ["--continue", parsed.continueSession];
+  }
+  if (parsed.continueSession) {
+    return ["--continue"];
+  }
+  return [];
+}
+
+function optionalValueFlag(flag: string, value: string | undefined): string[] {
+  const trimmed = value?.trim();
+  return trimmed ? [flag, trimmed] : [];
 }
 
 function joinWords(values: string[]): string {

@@ -48,6 +48,20 @@ docker compose run --rm incident-agent npm run investigate -- JSM-123
 docker compose run --rm incident-agent npm run agent -- poll-once
 ```
 
+Start an interactive Hermes terminal UI with the same generated runtime config,
+skills, and credentials as wrapper-launched one-off runs:
+
+```bash
+docker compose run --rm -it incident-agent npm run ui
+```
+
+Start Hermes' browser dashboard:
+
+```bash
+docker compose run --rm -p 127.0.0.1:9119:9119 incident-agent \
+  npm run dashboard -- --host 0.0.0.0 --no-open
+```
+
 Start periodic polling through Hermes cron and gateway:
 
 ```bash
@@ -352,6 +366,10 @@ npm run agent -- ticket <JSM-123>
 npm run agent -- logs [--window <time-window>] <query>
 npm run agent -- investigate <JSM-123>
 npm run agent -- poll-once
+npm run agent -- ui
+npm run agent -- ui --dashboard
+npm run ui
+npm run dashboard
 npm run poll
 ```
 
@@ -390,11 +408,29 @@ Command behavior:
 - `logs`: requires GitHub Copilot and Coralogix.
 - `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
+- `ui`: requires GitHub Copilot. Source tools are optional and preloaded when their environment is configured.
 - `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
 
 `HERMES_ARGS` defaults to `chat --quiet -q`. Hermes `--quiet` is for
 programmatic use: it suppresses the banner, spinner, and tool previews while
 still outputting the final response and session info.
+
+Interactive UI mode:
+
+```bash
+npm run ui
+npm run agent -- ui --cli
+npm run agent -- ui --continue-session
+npm run dashboard -- --host 0.0.0.0 --no-open
+```
+
+`ui` launches Hermes `chat --tui` by default and preloads the optional source
+skills enabled by the current environment. Use `--cli` for Hermes' classic
+terminal chat. Session options map to the same Hermes session flags as one-off
+commands. `dashboard` starts Hermes' browser dashboard through the wrapper
+runtime. When running the dashboard in Docker, publish the dashboard port with
+`-p 127.0.0.1:9119:9119` and bind Hermes to `--host 0.0.0.0` inside the
+container.
 
 Reasoning controls are passed through the generated Hermes config:
 

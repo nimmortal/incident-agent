@@ -124,6 +124,32 @@ export class HermesRunner {
       });
     });
   }
+
+  runInteractive(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
+
+      const child = spawn(this.binary, args, {
+        env: this.env,
+        stdio: "inherit",
+      });
+
+      child.on("error", (error) => {
+        reject(error);
+      });
+      child.on("close", (code) => {
+        if (code !== 0) {
+          reject(
+            new HermesRunError(`Hermes exited with code ${code}.`, {
+              exitCode: code ?? undefined,
+            }),
+          );
+          return;
+        }
+        resolve();
+      });
+    });
+  }
 }
 
 export class HermesRunError extends Error {
