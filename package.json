@@ -8,6 +8,7 @@
     "doctor": "tsx src/doctor.ts",
     "goal": "tsx src/agent-cli.ts goal",
     "investigate": "tsx src/agent-cli.ts investigate",
+    "test": "tsx --test src/**/*.test.ts",
     "ui": "tsx src/agent-cli.ts ui",
     "dashboard": "tsx src/agent-cli.ts ui --dashboard",
     "poll": "tsx src/poller.ts",

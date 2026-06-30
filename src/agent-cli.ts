@@ -5,23 +5,28 @@ import { buildHermesEnvironment } from "./hermes-config.ts";
 import { HermesRunError, HermesRunner, type HermesRunOptions } from "./hermes-runner.ts";
 import { createInvestigationJournal, type InvestigationJournal, type InvestigationPhase } from "./investigation-journal.ts";
 import {
+  codeUnavailableBrief,
   freeformPrompt,
   goalPrompt,
-  incidentEvidencePrompt,
+  incidentCodePrompt,
+  incidentEvidenceWithCodePrompt,
   incidentPhaseRecoveryPrompt,
-  incidentSynthesisPrompt,
+  incidentSynthesisWithCodePrompt,
   incidentTriagePrompt,
   jiraTicketPrompt,
   logsPrompt,
   pollPrompt,
 } from "./prompts.ts";
 import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
-import { coralogixSkills, optionalSourceSkills, skillArgs, wrapperSkills } from "./skill-sets.ts";
+import { coralogixSkills, optionalGithubSkills, optionalSourceSkills, skillArgs, wrapperSkills } from "./skill-sets.ts";
 
 interface Runtime {
   settings: Settings;
   hermes: HermesRunner;
 }
+
+const maxContinuationOutputChars = 12_000;
+const maxContinuationJournalChars = 12_000;
 
 async function main(): Promise<void> {
   let runtime: Promise<Runtime> | undefined;
@@ -83,7 +88,13 @@ async function main(): Promise<void> {
             return blocked;
           }
 
-          nextPrompt = phaseContinuationPrompt(phase, journal.issueKey, status, output, journal.readCompact());
+          nextPrompt = phaseContinuationPrompt(
+            phase,
+            journal.issueKey,
+            status,
+            compactPromptContext(output, maxContinuationOutputChars),
+            journal.readCompact(maxContinuationJournalChars),
+          );
           runOptions = { continueSession: true, streamOutput: options.stream };
           break;
         } catch (error) {
@@ -97,10 +108,10 @@ async function main(): Promise<void> {
               journal.issueKey,
               settings,
               phase,
-              prompt,
-              journal.readCompact(),
+              compactPromptContext(prompt, maxContinuationOutputChars),
+              journal.readCompact(maxContinuationJournalChars),
               message,
-              partialOutput,
+              compactPromptContext(partialOutput, maxContinuationOutputChars),
             );
             runOptions = { continueSession: true, streamOutput: options.stream };
             continue;
@@ -135,16 +146,20 @@ async function main(): Promise<void> {
     console.error(`[incident-agent] Investigation journal: ${journal.path}`);
 
     const triageBrief = await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options);
+    const codePhaseOutput = settings.features.sources.github.enabled
+      ? await runInvestigationPhase("code", incidentCodePrompt(issueKey, settings, triageBrief, journal.path), journal, optionalGithubSkills(settings), options)
+      : codePhaseUnavailable(settings);
+    const codeBrief = normalizeCodeBrief(codePhaseOutput);
     const evidenceBrief = await runInvestigationPhase(
       "evidence",
-      incidentEvidencePrompt(issueKey, settings, triageBrief, journal.path),
+      incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
       journal,
       skills,
       options,
     );
     await runInvestigationPhase(
       "synthesis",
-      incidentSynthesisPrompt(issueKey, settings, triageBrief, evidenceBrief, journal.path),
+      incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path),
       journal,
       skills,
       options,
@@ -536,6 +551,34 @@ function phaseStatusInstructions(phase: InvestigationPhase): string {
     "- For \"blocked\", include \"blockedBy\" with the concrete blocker and exact next input or source needed.",
     "- For \"continue\", include \"nextPrompt\" with one specific next investigation action for this same phase.",
   ].join("\n");
+}
+
+function compactPromptContext(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  const headChars = Math.floor(maxChars / 2);
+  const tailChars = maxChars - headChars;
+  return [
+    value.slice(0, headChars),
+    `[truncated ${value.length - maxChars} chars; keeping head and tail]`,
+    value.slice(-tailChars),
+  ].join("\n");
+}
+
+function codePhaseUnavailable(settings: Settings): string {
+  const missing = settings.features.sources.github.missingEnv.join(", ") || "GitHub source disabled";
+  return codeUnavailableBrief(`GitHub code source is not configured (${missing}).`, "");
+}
+
+function normalizeCodeBrief(output: string): string {
+  if (output.startsWith("Blocked phase: code")) {
+    return codeUnavailableBrief("Code grounding phase was blocked.", output);
+  }
+  if (output.startsWith("Recovered phase: code")) {
+    return codeUnavailableBrief("Code grounding phase fell back before producing a structured code brief.", output);
+  }
+  return output;
 }
 
 function phaseBlockedResult(phase: InvestigationPhase, status: StepStatus, output: string): string {

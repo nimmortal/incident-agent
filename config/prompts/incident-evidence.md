@@ -1,19 +1,25 @@
 {{featureContext}}
 
-Phase 2: gather bounded evidence for incident ticket {{issueKey}}.
+Phase 3: gather bounded evidence for incident ticket {{issueKey}}.
 
-Use the scout plan from the triage brief below to decide which focused scouts are needed. Use delegate_task for each bounded log, GitHub, or Postgres deep dive.
+Use the scout plan from the triage brief and the code brief below to decide which focused scouts are needed. Use delegate_task for each bounded log, source-comparison, or Postgres deep dive.
 If you add a scout that was not in the triage plan, state the trigger and why the new scout is necessary.
 Do not leave planned safe scouts as recommendations when the source is configured and the scope is available. Run the bounded read-only check now, or state the concrete blocker.
-Do not write Jira comments or labels in this phase. Keep parent context compact and synthesize scout results instead of pasting raw logs or command dumps.
+Do not write Jira comments or labels in this phase. Keep parent context compact and synthesize scout results instead of pasting raw logs, query dumps, or command output.
 The wrapper is journaling phase outputs at {{journalPath}}; make your final phase output compact enough to reread during synthesis.
 Keep the evidence brief terse: at most 2 bullets per heading and at most 8 evidence ledger entries. Prefer identifiers over prose.
+Use the code brief as the primary search contract for logs/traces/metrics/database checks. If log evidence does not match the expected code-path signals, preserve that mismatch as evidence instead of smoothing it over.
 
 Triage brief:
 {{triageBrief}}
 
+Code brief:
+{{codeBrief}}
+
 Return an evidence brief with these headings:
 - scouts run
+- source alignment
+- source join keys
 - evidence supporting likely root cause
 - evidence against or unrelated noise
 - evidence ledger
@@ -25,9 +31,16 @@ Return an evidence brief with these headings:
 For each evidence ledger entry, include:
 - claim or observation
 - source
-- command, query, issue key, commit SHA, workflow, table, timestamp, or link
+- join keys: service, environment, time window, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, and join confidence
+- code anchor, command, query, issue key, commit SHA, workflow, table, timestamp, trace ID, or link
 - supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low
+
+For source alignment, cover Jira/JSM, code, and Coralogix/Postgres when configured:
+- match: the sources agree on the same service/path/time/signature
+- mismatch: the sources point to different paths, times, signatures, or versions
+- missing: the source was unavailable or the scoped check was blocked
+Use the same join-key names across ledger entries so synthesis can compare sources without reinterpreting prose.
 
 End your response with exactly one status block in this format:
 

@@ -22,7 +22,7 @@ export type InvestigationJournalEvent =
   | { type: "phase_failed"; phase: InvestigationPhase; error: string; step?: number; attempt: number; recovery: boolean; partialOutput?: string }
   | { type: "phase_fallback"; phase: InvestigationPhase; output: string; step?: number; maxSteps?: number };
 
-export type InvestigationPhase = "triage" | "evidence" | "synthesis";
+export type InvestigationPhase = "triage" | "code" | "evidence" | "synthesis";
 
 export function createInvestigationJournal(settings: Settings, issueKey: string): InvestigationJournal {
   const runId = timestampId(new Date());

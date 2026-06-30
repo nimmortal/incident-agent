@@ -51,11 +51,81 @@ export function incidentTriagePrompt(issueKey: string, settings: Settings): stri
   });
 }
 
+export function incidentCodePrompt(issueKey: string, settings: Settings, triageBrief: string, journalPath: string): string {
+  return renderPrompt(settings, "incident-code", {
+    featureContext: featureContext(settings),
+    issueKey,
+    triageBrief,
+    journalPath,
+  });
+}
+
+export function codeUnavailableBrief(reason: string, details: string): string {
+  return [
+    "Code phase: unavailable",
+    "",
+    "code path map",
+    "- repo/service: missing",
+    "- environment, deploy/ref, version range, tenant/customer/request/trace IDs when available: missing",
+    "- file path and function/class/module/route/job name: missing",
+    "- logic summary in one sentence: GitHub code grounding could not complete.",
+    "- expected log, trace, metric, database, or external-service evidence: use Jira/JSM identifiers only until code grounding is restored.",
+    "- confidence: low",
+    "",
+    "source join keys",
+    "- service: missing",
+    "- environment: missing",
+    "- time window: use triage timeline only",
+    "- ticket/tenant/customer/request/trace IDs: use triage identifiers only",
+    "- repo: missing",
+    "- deploy/ref: missing",
+    "- join confidence: low",
+    "",
+    "runtime signals to verify",
+    "- missing because code grounding is unavailable",
+    "",
+    "ticket-to-code alignment",
+    "- missing: Jira/JSM ticket could not be mapped to GitHub code.",
+    "",
+    "recent change or deployment context",
+    "- missing",
+    "",
+    "alternate paths or ruled-out paths",
+    "- not checked",
+    "",
+    "code confidence",
+    "- low",
+    "",
+    "next evidence queries",
+    `- restore code grounding or provide repository/service/deploy context; reason: ${reason}`,
+    "",
+    "raw blocker or fallback details",
+    details || "(none)",
+  ].join("\n");
+}
+
 export function incidentEvidencePrompt(issueKey: string, settings: Settings, triageBrief: string, journalPath: string): string {
   return renderPrompt(settings, "incident-evidence", {
     featureContext: featureContext(settings),
     issueKey,
     triageBrief,
+    codeBrief: "(code phase not available or not run)",
+    journalPath,
+  });
+}
+
+export function incidentEvidenceWithCodePrompt(
+  issueKey: string,
+  settings: Settings,
+  triageBrief: string,
+  codeBrief: string,
+  journalPath: string,
+): string {
+  return renderPrompt(settings, "incident-evidence", {
+    featureContext: featureContext(settings),
+    issueKey,
+    triageBrief,
+    codeBrief,
     journalPath,
   });
 }
@@ -71,6 +141,25 @@ export function incidentSynthesisPrompt(
     featureContext: featureContext(settings),
     issueKey,
     triageBrief,
+    codeBrief: "(code phase not available or not run)",
+    evidenceBrief,
+    journalPath,
+  });
+}
+
+export function incidentSynthesisWithCodePrompt(
+  issueKey: string,
+  settings: Settings,
+  triageBrief: string,
+  codeBrief: string,
+  evidenceBrief: string,
+  journalPath: string,
+): string {
+  return renderPrompt(settings, "incident-synthesis", {
+    featureContext: featureContext(settings),
+    issueKey,
+    triageBrief,
+    codeBrief,
     evidenceBrief,
     journalPath,
   });

@@ -7,7 +7,7 @@ The first version is intentionally simple:
 - exposes a small CLI for ad-hoc investigation commands
 - uses Hermes cron and gateway to poll Jira/JSM through MCP
 - delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
-- runs end-to-end ticket investigation in triage, evidence, and synthesis phases
+- runs end-to-end ticket investigation in triage, code grounding, evidence, and synthesis phases
 - runs bounded goal loops for autonomous multi-step investigation
 - writes compact investigation journals under `./data/investigations`
 - keeps the wrapper limited to scheduling and prompt template rendering
