@@ -42,7 +42,9 @@ If you produce follow-up actions, separate what you checked during this session 
 Goal: Investigate one log/trace/metric hypothesis or one bounded time/service slice.
 Context: <issue key or request>, <service/component>, <time window>, <known error terms>, <constraints>.
 Tools: Use cx CLI and loaded Coralogix skills only. Stay read-only.
-Return: query used; inspected time range; top patterns with counts; 3 to 5 representative timestamps, trace IDs, or event IDs; suspected service/component; confidence; unknowns; next query if more work is needed.
+Return: query used; inspected time range; `subsystem=<value>` for the service that produced the log; `correlation_id=<value>` when present; top patterns with counts; 3 to 5 representative timestamps, trace IDs, or event IDs; confidence; unknowns; next query if more work is needed.
+If multiple subsystems appear, rank them by evidence strength. Treat the chosen subsystem as the service key for GitHub code exploration.
+Use correlation IDs to connect the processing flow across log events, subsystems, traces, tickets, and code paths. If the log source uses a different correlation field name, preserve the actual field name and value.
 
 ### GitHub Scout
 
@@ -78,7 +80,7 @@ When producing incident evidence or synthesis, maintain a compact evidence ledge
 
 - claim or observation
 - source
-- command, query, issue key, commit SHA, workflow, table, timestamp, or link
+- command, query, issue key, commit SHA, workflow, table, timestamp, subsystem, correlation ID, or link
 - whether it supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low
 

@@ -9,6 +9,7 @@ Do not write Jira comments or labels in this phase. Keep parent context compact 
 The wrapper is journaling phase outputs at {{journalPath}}; make your final phase output compact enough to reread during synthesis.
 Keep the evidence brief terse: at most 2 bullets per heading and at most 8 evidence ledger entries. Prefer identifiers over prose.
 Use the code brief as the primary search contract for runtime checks. If runtime evidence does not match the expected code-path signals, preserve that mismatch as evidence instead of smoothing it over.
+For log evidence, always capture `subsystem=<value>` and `correlation_id=<value>` when present. Treat the subsystem value as the service key that should feed later GitHub/code exploration. Use correlation IDs to wire together the processing flow across log events, subsystems, traces, tickets, and code paths. If multiple subsystem values appear, rank them by relevance.
 When the issue depends on a framework, SDK, protocol, API, blockchain, cloud service, or library behavior, verify the current docs before synthesis. Prefer Context7 MCP for library/framework/API docs; use official web docs when Context7 does not cover the technology.
 
 Triage brief:
@@ -33,7 +34,7 @@ Return an evidence brief with these headings:
 For each evidence ledger entry, include:
 - claim or observation
 - source
-- join keys: service, environment, time window, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, and join confidence
+- join keys: service, subsystem, environment, time window, correlation ID, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, and join confidence
 - code anchor, command, query, issue key, commit SHA, workflow, table, timestamp, trace ID, or link
 - supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low

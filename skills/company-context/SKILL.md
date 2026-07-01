@@ -32,7 +32,7 @@ Fill this with environment names, region names, cluster names, tenant convention
 
 ## Telemetry Conventions
 
-Fill this with Coralogix teams/apps/subsystems, common fields, trace ID fields, request ID fields, tenant/user/account identifiers, severity conventions, and useful baseline queries.
+Fill this with Coralogix teams/apps/subsystems, common fields, correlation ID fields, trace ID fields, request ID fields, tenant/user/account identifiers, severity conventions, and useful baseline queries. Treat `subsystem` as the service key that maps logs to GitHub repository/code exploration, and use correlation IDs to connect processing-flow events across subsystems.
 
 | Signal | Field or query convention | Notes |
 | --- | --- | --- |
