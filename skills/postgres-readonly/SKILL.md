@@ -12,16 +12,18 @@ Use this skill when incident investigation needs evidence from the configured Po
 - Use the `DATABASE_URL` environment variable. Do not print it.
 - Use `psql`; do not install packages or use ad hoc database clients.
 - Assume access should be read-only. If a query would mutate data, stop and explain why.
+- The runtime sets `PGOPTIONS` with default read-only mode, statement timeout, lock timeout, and idle transaction timeout. Do not override those settings to longer or less restrictive values.
 
 ## Safe Query Pattern
 
-Run every investigation query inside a read-only transaction with a short timeout:
+Run every investigation query inside a read-only transaction with local timeouts:
 
 ```bash
-psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --csv -c "BEGIN READ ONLY; SET LOCAL statement_timeout = '30s'; SELECT now(); ROLLBACK;"
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --csv -c "BEGIN READ ONLY; SET LOCAL statement_timeout = '5s'; SET LOCAL lock_timeout = '1s'; SELECT now() LIMIT 1; ROLLBACK;"
 ```
 
 Replace `SELECT now()` with the actual read-only query. Prefer `--csv` for tabular results that need to be summarized.
+Every query must have a bounded predicate or a small `LIMIT`; schema-discovery queries should also use narrow filters.
 
 ## Workflow
 
@@ -31,7 +33,7 @@ Replace `SELECT now()` with the actual read-only query. Prefer `--csv` for tabul
    - list candidate tables from `information_schema.tables`
    - list columns from `information_schema.columns`
 3. Read only the minimum rows needed to answer the incident question.
-4. Use tight filters and explicit limits.
+4. Use tight filters, explicit limits, and the shortest useful time window.
 5. Cite table names, filters, row counts, and timestamps in the final answer.
 6. Do not expose secrets, tokens, passwords, private keys, or full personal data values. Mask sensitive fields in summaries.
 
@@ -39,5 +41,7 @@ Replace `SELECT now()` with the actual read-only query. Prefer `--csv` for tabul
 
 - Never run `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `CALL`, or `DO`.
 - Do not run long table scans without a narrow time window or identifier filter.
-- Do not change session settings except `statement_timeout` inside the read-only transaction.
+- Do not run unbounded `SELECT *`; select only columns needed for the hypothesis.
+- Do not change session settings except local timeouts inside the read-only transaction.
+- If a query times out, narrow the predicate, reduce the time window, or inspect schema/indexes before retrying. Do not simply raise the timeout.
 - If read-only access is denied or the connection user can write, continue to use read-only transactions and report the access mismatch.

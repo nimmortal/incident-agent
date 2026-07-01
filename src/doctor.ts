@@ -177,11 +177,17 @@ function verifyPostgres(): void {
       "ON_ERROR_STOP=1",
       "--csv",
       "-c",
-      "BEGIN READ ONLY; SET LOCAL statement_timeout = '10s'; SELECT now(); ROLLBACK;",
+      [
+        "BEGIN READ ONLY",
+        `SET LOCAL statement_timeout = '${postgresTimeoutMs("POSTGRES_STATEMENT_TIMEOUT_MS", 5_000)}ms'`,
+        `SET LOCAL lock_timeout = '${postgresTimeoutMs("POSTGRES_LOCK_TIMEOUT_MS", 1_000)}ms'`,
+        "SELECT now() LIMIT 1",
+        "ROLLBACK",
+      ].join("; "),
     ],
     {
       encoding: "utf8",
-      timeout: 15_000,
+      timeout: postgresTimeoutMs("POSTGRES_STATEMENT_TIMEOUT_MS", 5_000) + 5_000,
       stdio: "pipe",
     },
   );
@@ -190,6 +196,11 @@ function verifyPostgres(): void {
     return;
   }
   console.log("- Postgres: read-only query succeeded");
+}
+
+function postgresTimeoutMs(envName: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[envName] ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function jiraMcpProbeHeaders(): Record<string, string> {

@@ -293,6 +293,9 @@ use the corresponding source:
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
+- `POSTGRES_STATEMENT_TIMEOUT_MS`: statement timeout applied to every `psql` connection through `PGOPTIONS`. Defaults to `5000`.
+- `POSTGRES_LOCK_TIMEOUT_MS`: lock wait timeout applied to every `psql` connection through `PGOPTIONS`. Defaults to `1000`.
+- `POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS`: idle transaction timeout applied to every `psql` connection through `PGOPTIONS`. Defaults to `5000`.
 
 For GitHub CLI access, the container has `gh` installed and the image build
 seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
@@ -315,6 +318,11 @@ includes a `postgres-readonly` Hermes skill. Set `DATABASE_URL` only when the
 agent should be allowed to read database state. The skill instructs Hermes to use
 read-only transactions, short statement timeouts, tight filters, and masked
 summaries for sensitive fields.
+The wrapper also sets `PGOPTIONS` for Hermes-launched commands whenever
+`DATABASE_URL` is configured: `default_transaction_read_only=on`, a statement
+timeout, a lock timeout, and an idle transaction timeout. Keep these values low;
+if a query times out, narrow the predicate or time window instead of raising the
+timeout.
 
 For technology documentation, Hermes is configured with the Context7 remote MCP
 server. Investigation prompts tell Hermes to use Context7 for current library,

@@ -62,8 +62,8 @@ Return: documented behavior; version or docs scope; why it matters for this inci
 
 Goal: Verify one bounded read-only application-state hypothesis.
 Context: <issue key or request>, <tenant/user/order IDs>, <tables or entities>, <time window>, <safety constraints>.
-Tools: Use psql and loaded Postgres skill only. Read-only queries only; no locks, writes, migrations, or schema changes.
-Return: queries run; row counts; compact result summary; sensitive values redacted; confidence; unknowns; next query if needed.
+Tools: Use psql and loaded Postgres skill only. Read-only queries only; no locks, writes, migrations, or schema changes. Every query must use local timeouts, tight filters, and explicit limits.
+Return: queries run; timeouts used; filters and limits; row counts; compact result summary; sensitive values redacted; confidence; unknowns; next query if needed.
 
 ## Delegation Rules
 

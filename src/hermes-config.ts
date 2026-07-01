@@ -28,6 +28,7 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HERMES_DELEGATION_REASONING_EFFORT: process.env.HERMES_DELEGATION_REASONING_EFFORT ?? "",
   };
   configureGitHubCliAuth(settings, env);
+  configurePostgresSafety(env);
   return env;
 }
 
@@ -165,6 +166,31 @@ function configureGitHubCliAuth(settings: Settings, env: NodeJS.ProcessEnv): voi
   chmodSync(hostsPath, 0o600);
 
   env.GH_CONFIG_DIR = configDir;
+}
+
+function configurePostgresSafety(env: NodeJS.ProcessEnv): void {
+  if (!env.DATABASE_URL?.trim()) {
+    return;
+  }
+
+  env.PGOPTIONS = [
+    env.PGOPTIONS?.trim(),
+    "-c",
+    `statement_timeout=${postgresTimeoutMs(env.POSTGRES_STATEMENT_TIMEOUT_MS, 5_000)}`,
+    "-c",
+    `lock_timeout=${postgresTimeoutMs(env.POSTGRES_LOCK_TIMEOUT_MS, 1_000)}`,
+    "-c",
+    `idle_in_transaction_session_timeout=${postgresTimeoutMs(env.POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS, 5_000)}`,
+    "-c",
+    "default_transaction_read_only=on",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function postgresTimeoutMs(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function yamlString(value: string): string {
