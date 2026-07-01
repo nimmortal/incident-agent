@@ -17,7 +17,7 @@ Evidence brief:
 
 Before drafting, map each root-cause claim to the code path, documentation check, and evidence ledger entry that support it. Do not include unsupported claims.
 Every root-cause claim must state internally whether ticket, code, docs, and runtime evidence align, mismatch, or remain missing.
-Use source join keys consistently: service, environment, time window, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, and join confidence.
+Use source join keys consistently: service, environment, time window, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, schema, and join confidence.
 If the evidence brief contains unchecked follow-ups that could materially change root-cause confidence, perform one bounded read-only check now when the source is configured and the scope is clear. Otherwise, mark the item as blocked and state the exact blocker.
 
 Produce a terse chat-only conclusion with one or more possible reasons for the issue.

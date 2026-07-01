@@ -318,6 +318,11 @@ includes a `postgres-readonly` Hermes skill. Set `DATABASE_URL` only when the
 agent should be allowed to read database state. The skill instructs Hermes to use
 read-only transactions, short statement timeouts, tight filters, and masked
 summaries for sensitive fields.
+`DATABASE_URL` points to one database. If that database contains multiple
+application schemas, declare the expected schema names and service ownership in
+`skills/company-context/SKILL.md`; the agent must still verify visible schemas
+through `information_schema` and use schema-qualified table names such as
+`schema.table`.
 The wrapper also sets `PGOPTIONS` for Hermes-launched commands whenever
 `DATABASE_URL` is configured: `default_transaction_read_only=on`, a statement
 timeout, a lock timeout, and an idle transaction timeout. Keep these values low;

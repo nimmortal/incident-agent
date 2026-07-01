@@ -25,7 +25,7 @@ For each scout in the scout plan, include:
 - hypothesis or question
 - time window or version range
 - identifiers, service names, repos, tables, fields, or query terms
-- join keys: service, environment, time window, tenant/customer/request/trace IDs, repo, deploy/ref, and confidence
+- join keys: service, environment, time window, tenant/customer/request/trace IDs, repo, deploy/ref, schema, and confidence
 - expected evidence shape
 - stop condition
 

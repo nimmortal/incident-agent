@@ -63,9 +63,10 @@ Return: documented behavior; version or docs scope; why it matters for this inci
 ### Postgres Scout
 
 Goal: Verify one bounded read-only application-state hypothesis.
-Context: <issue key or request>, <tenant/user/order IDs>, <tables or entities>, <time window>, <safety constraints>.
+Context: <issue key or request>, <tenant/user/order IDs>, <schemas/tables/entities>, <time window>, <safety constraints>.
 Tools: Use psql and loaded Postgres skill only. Read-only queries only; no locks, writes, migrations, or schema changes. Every query must use local timeouts, tight filters, and explicit limits.
-Return: queries run; timeouts used; filters and limits; row counts; compact result summary; sensitive values redacted; confidence; unknowns; next query if needed.
+Before table lookup, list visible non-system schemas unless the prompt already provides the exact schema-qualified table. Do not assume `public`.
+Return: schemas inspected; schema-qualified tables used; queries run; timeouts used; filters and limits; row counts; compact result summary; sensitive values redacted; confidence; unknowns; next query if needed.
 
 ## Delegation Rules
 
@@ -80,7 +81,7 @@ When producing incident evidence or synthesis, maintain a compact evidence ledge
 
 - claim or observation
 - source
-- command, query, issue key, commit SHA, workflow, table, timestamp, subsystem, correlation ID, or link
+- command, query, issue key, commit SHA, workflow, schema.table, timestamp, subsystem, correlation ID, or link
 - whether it supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low
 

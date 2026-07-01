@@ -6,6 +6,7 @@ description: Read Postgres data safely with psql for incident investigation. Use
 # Postgres Read-Only Access
 
 Use this skill when incident investigation needs evidence from the configured Postgres database.
+One `DATABASE_URL` points to one database. If that database contains multiple application schemas, discover and choose schemas inside the connected database; do not treat schemas as separate database URLs.
 
 ## Connection
 
@@ -28,20 +29,25 @@ Every query must have a bounded predicate or a small `LIMIT`; schema-discovery q
 ## Workflow
 
 1. Identify the entity being investigated: tenant, user, account, request ID, job ID, order ID, document ID, timestamp window, or service-specific key.
-2. Discover schema before guessing table names:
-   - list schemas from `information_schema.schemata`
-   - list candidate tables from `information_schema.tables`
-   - list columns from `information_schema.columns`
-3. Read only the minimum rows needed to answer the incident question.
-4. Use tight filters, explicit limits, and the shortest useful time window.
-5. Cite table names, filters, row counts, and timestamps in the final answer.
-6. Do not expose secrets, tokens, passwords, private keys, or full personal data values. Mask sensitive fields in summaries.
+2. Discover schemas before guessing table names:
+   - list visible non-system schemas from `information_schema.schemata`
+   - prefer company-context schema hints when present, but verify they exist
+   - do not assume `public` unless schema discovery or the user identifies it
+3. Discover candidate tables with schema-qualified names:
+   - query `information_schema.tables` by `table_schema`
+   - query `information_schema.columns` by `table_schema` and `table_name`
+   - use `schema.table` in queries and summaries once a table is selected
+4. Read only the minimum rows needed to answer the incident question.
+5. Use tight filters, explicit limits, and the shortest useful time window.
+6. Cite schemas inspected, `schema.table` names, filters, row counts, and timestamps in the final answer.
+7. Do not expose secrets, tokens, passwords, private keys, or full personal data values. Mask sensitive fields in summaries.
 
 ## Guardrails
 
 - Never run `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, `GRANT`, `REVOKE`, `VACUUM`, `ANALYZE`, `CALL`, or `DO`.
 - Do not run long table scans without a narrow time window or identifier filter.
 - Do not run unbounded `SELECT *`; select only columns needed for the hypothesis.
+- Do not query unqualified table names when multiple schemas are visible.
 - Do not change session settings except local timeouts inside the read-only transaction.
 - If a query times out, narrow the predicate, reduce the time window, or inspect schema/indexes before retrying. Do not simply raise the timeout.
 - If read-only access is denied or the connection user can write, continue to use read-only transactions and report the access mismatch.

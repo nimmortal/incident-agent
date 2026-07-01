@@ -41,6 +41,14 @@ Fill this with Coralogix teams/apps/subsystems, common fields, correlation ID fi
 | Metrics | _todo_ | _todo_ |
 | Alerts | _todo_ | _todo_ |
 
+## Postgres Schema Conventions
+
+Fill this with application schemas inside the configured database, ownership, service mapping, tenant boundaries, and common schema-qualified tables. Postgres scouts must still verify schemas with `information_schema` before querying tables.
+
+| Schema | Owner/service | Common tables | Notes |
+| --- | --- | --- | --- |
+| _todo_ | _todo_ | _todo_ | _todo_ |
+
 ## Jira/JSM Conventions
 
 Fill this with project keys, ticket types, statuses, escalation fields, and incident severity definitions. Do not use this skill to authorize ticket writes.

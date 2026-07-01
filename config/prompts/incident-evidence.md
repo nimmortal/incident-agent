@@ -34,8 +34,8 @@ Return an evidence brief with these headings:
 For each evidence ledger entry, include:
 - claim or observation
 - source
-- join keys: service, subsystem, environment, time window, correlation ID, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, and join confidence
-- code anchor, command, query, issue key, commit SHA, workflow, table, timestamp, trace ID, or link
+- join keys: service, subsystem, environment, time window, correlation ID, ticket/tenant/customer/request/trace IDs, repo, deploy/ref, schema, and join confidence
+- code anchor, command, query, issue key, commit SHA, workflow, schema.table, timestamp, trace ID, or link
 - supports, weakens, or is neutral toward the suspected root cause
 - confidence: high, medium, or low
 
