@@ -6,11 +6,12 @@ The first version is intentionally simple:
 
 - exposes a small CLI for ad-hoc investigation commands
 - uses Hermes cron and gateway to poll Jira/JSM through MCP
-- delegates Jira, Coralogix, and GitHub investigation to Hermes tools and CLIs
+- delegates read-only Jira, GitHub, Context7 docs, Coralogix, and Postgres investigation to Hermes tools and CLIs
 - runs end-to-end ticket investigation in triage, code grounding, evidence, and synthesis phases
 - runs bounded goal loops for autonomous multi-step investigation
 - writes compact investigation journals under `./data/investigations`
 - keeps the wrapper limited to scheduling and prompt template rendering
+- returns conclusions in chat only; it must not write Jira comments, labels, statuses, or other external state
 
 ## Setup
 
@@ -287,6 +288,8 @@ Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
 - `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
+- `CONTEXT7_MCP_URL`: Context7 remote MCP endpoint. Defaults to `https://mcp.context7.com/mcp`.
+- `CONTEXT7_API_KEY`: optional Context7 API key for higher rate limits or private documentation.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
 - `CX_REGION`: Coralogix region available to `cx` inside the container.
 - `DATABASE_URL`: Postgres connection URL available to `psql` inside the container. Prefer a read-only database user.
@@ -313,10 +316,16 @@ agent should be allowed to read database state. The skill instructs Hermes to us
 read-only transactions, short statement timeouts, tight filters, and masked
 summaries for sensitive fields.
 
+For technology documentation, Hermes is configured with the Context7 remote MCP
+server. Investigation prompts tell Hermes to use Context7 for current library,
+framework, SDK, API, protocol, cloud, and blockchain docs before relying on
+model memory. If Context7 does not cover the technology, the agent should use
+official web docs read-only.
+
 ## Commands
 
-The wrapper intentionally does not implement Jira, GitHub, Coralogix, or
-Postgres clients. Those systems are exposed to Hermes as tools.
+The wrapper intentionally does not implement Jira, GitHub, Context7, Coralogix,
+or Postgres clients. Those systems are exposed to Hermes as tools.
 CLI parsing is handled by Commander, so use the built-in help while iterating:
 
 ```bash
@@ -372,8 +381,8 @@ Command behavior:
 - `ticket`: requires GitHub Copilot and Jira/JSM.
 - `logs`: requires GitHub Copilot and Coralogix.
 - `goal`: requires GitHub Copilot. It runs repeated Hermes turns in one session until Hermes reports `done`, `blocked`, or the wrapper reaches `--max-steps`.
-- `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Coralogix, and Postgres as optional investigation context. Each phase uses the same `continue`, `done`, or `blocked` progress contract as goal mode.
-- `poll-once`: requires GitHub Copilot and Jira/JSM. GitHub, Coralogix, and Postgres are optional investigation context.
+- `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, code grounding, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Context7, Coralogix, and Postgres as optional read-only investigation context. Each phase uses the same `continue`, `done`, or `blocked` progress contract as goal mode.
+- `poll-once`: requires GitHub Copilot and Jira/JSM. It reads matching tickets and returns chat-only conclusions; GitHub, Context7, Coralogix, and Postgres are optional read-only investigation context.
 - `ui`: requires GitHub Copilot. Source tools are optional and preloaded when their environment is configured.
 - `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
 
@@ -424,7 +433,7 @@ HERMES_REASONING_FULL=false
 `HERMES_REASONING_EFFORT` accepts `none`, `minimal`, `low`, `medium`, `high`,
 or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
 controls whether Hermes displays model reasoning when the provider returns it;
-keep it off for normal incident comments.
+keep it off for normal incident summaries.
 
 Shared incident-investigation behavior lives in the local Hermes skill
 `skills/incident-agent` and is preloaded for wrapper commands, `npm run ui`, and
@@ -441,7 +450,7 @@ PROMPT_TEMPLATES_DIR=config/prompts
 ```
 
 Templates use simple `{{variableName}}` placeholders for runtime values such as
-issue keys, feature context, JQL, phase briefs, labels, and journal paths. These
+issue keys, feature context, JQL, phase briefs, and journal paths. These
 templates are only used by wrapper commands that submit a prompt to Hermes; the
 interactive UI gets the shared behavior through the `incident-agent` and
 `company-context` skills.
@@ -498,33 +507,35 @@ commands without a human in the loop.
 
 For expensive evidence gathering, treat the main Hermes agent as the incident
 orchestrator, not the place where every raw result should accumulate. Broad log
-queries, uncertain Coralogix query construction, service-by-service comparisons,
-large trace searches, and broad code searches should be delegated to focused
-read-only subagents. Each subagent should return only a bounded summary: query
-or command used, inspected time range, top patterns with counts, a few
-representative timestamps or trace IDs, confidence, and unknowns. The parent
-keeps the timeline, RCA synthesis, Jira state transitions, and final comment.
+queries, uncertain query construction, service-by-service comparisons, large
+trace searches, broad code searches, and technology documentation checks should
+be delegated to focused read-only subagents. Each subagent should return only a
+bounded summary: query or command used, inspected time range, top patterns with
+counts, a few representative timestamps or trace IDs, confidence, and unknowns.
+The parent keeps only the possible reason(s), confidence, and blockers needed
+for the final chat answer.
 
 The prompt contract in `skills/incident-agent/SKILL.md` includes fixed scout
-templates for log, GitHub, and Postgres deep dives. Company-specific lookup
+templates for log, GitHub, documentation, and Postgres deep dives. Company-specific lookup
 tables and conventions belong in `skills/company-context/SKILL.md`. Delegated
 scouts receive one narrow goal, bounded context, read-only tool constraints, and
 a required compact return shape. This keeps uncertain query construction and
 high-volume source exploration out of the parent context.
 
-End-to-end `investigate` runs are split into three wrapper-orchestrated phases:
+End-to-end `investigate` runs are split into four wrapper-orchestrated phases:
 
 - `triage`: read Jira/JSM and produce a compact ticket brief.
-- `evidence`: use the triage brief to delegate bounded source scouts and
-  produce an evidence brief.
-- `synthesis`: use the two briefs to prepare the internal RCA or incomplete
-  investigation note.
+- `code`: map the ticket to relevant code paths and technology docs.
+- `evidence`: use the triage and code briefs to delegate bounded source scouts
+  and produce an evidence brief.
+- `synthesis`: use the briefs to return a chat-only list of possible reasons,
+  confidence, and the next blocker/check when needed.
 
 Within each phase Hermes must end every turn with an
 `<incident-agent-phase-status>` block. The wrapper parses that block to decide
 whether the phase should continue, advance, or stop as blocked. This gives
 `investigate` the same progress semantics as goal mode while preserving the
-fixed triage -> evidence -> synthesis workflow.
+fixed triage -> code -> evidence -> synthesis workflow.
 
 Each phase writes a JSONL event stream to
 `INVESTIGATION_JOURNAL_DIR/<issue-key>/<run-id>.jsonl`, defaulting to
@@ -537,8 +548,9 @@ The local wrapper treats capabilities as provider/source modules:
 
 - Provider: GitHub Copilot is mandatory for every Hermes run.
 - Model: Hermes is pinned to `gpt-5.4` through `config/hermes.config.yaml`.
-- Source: Jira/JSM provides tickets and incident workflow through MCP.
+- Source: Jira/JSM provides read-only tickets through MCP.
 - Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh` and bundled GitHub skills.
+- Source: Context7 provides current technology documentation through MCP.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
 - Source: Postgres provides read-only database evidence through `psql` and a repository-local skill.
 
@@ -552,7 +564,7 @@ is left unprobed until a safe account-specific read query is configured.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
-feature registry, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
+feature registry, enables Context7 MCP, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
 refreshes image-installed Hermes skills in the runtime Hermes home, refreshes
 repository-local Hermes skills, preloads the `incident-agent` and
 `company-context` skills, and checks required CLI binaries plus preloaded skills
@@ -565,16 +577,13 @@ the Hermes gateway in the foreground so due cron jobs fire.
 
 ## Investigation State
 
-The polling prompt tells Hermes to use labels:
-
-- `ai-investigating`
-- `ai-investigated`
-- `ai-investigation-failed`
-
-For production, replace labels with a custom field or a dedicated app property.
+The current workflow is read-only. Polling reads matching Jira/JSM tickets and
+prints chat summaries; it does not claim tickets, add labels, write comments, or
+record completion state in Jira/JSM. If production needs durable investigation
+state later, add an explicit storage mechanism and keep it separate from the
+read-only prompt contract.
 
 ## Comment Visibility
 
-The prompt instructs Hermes to write only internal/private Jira/JSM investigation
-comments. Validate the Jira MCP tool behavior before using this with real
-customer tickets.
+The prompt contract forbids Jira/JSM comment writes. Investigation conclusions
+are returned in chat only.

@@ -44,7 +44,10 @@ test("incident prompt phases render code grounding and source alignment contract
     "data/investigations/JSM-123/run.jsonl",
   );
   assert.match(synthesis, /Phase 4: synthesize incident ticket/);
-  assert.match(synthesis, /Every root-cause claim must state whether Jira\/JSM, GitHub code, and Coralogix\/Postgres evidence align/);
+  assert.match(synthesis, /Do not write Jira comments/);
+  assert.match(synthesis, /chat-only conclusion/);
+  assert.match(synthesis, /possible reason/);
+  assert.match(synthesis, /ticket, code, docs, and runtime evidence align/);
   assert.match(synthesis, /trace-1/);
 });
 
@@ -67,6 +70,7 @@ function settings(): Settings {
       sources: {
         jiraJsm: feature("source:jira-jsm", "source", "Jira/JSM"),
         github: feature("source:github", "source", "GitHub"),
+        context7: feature("source:context7", "source", "Context7"),
         coralogix: feature("source:coralogix", "source", "Coralogix"),
         postgres: feature("source:postgres", "source", "Postgres"),
       },

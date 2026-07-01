@@ -11,8 +11,8 @@ When a section is not filled in yet, do not invent details. Ask for the missing 
 ## Investigation Priorities
 
 - Customer impact and blast radius come before implementation details.
-- Prefer direct evidence from Jira/JSM, Coralogix, GitHub, and Postgres over assumptions.
-- Keep customer-facing communication separate from internal/private investigation notes.
+- Prefer direct evidence from Jira/JSM, code, current docs, runtime telemetry, and read-only state checks over assumptions.
+- Keep customer-facing communication and ticket updates out of the agent workflow; investigation conclusions are chat-only unless a human explicitly copies them elsewhere.
 
 ## Service And Repository Map
 
@@ -43,14 +43,13 @@ Fill this with Coralogix teams/apps/subsystems, common fields, trace ID fields, 
 
 ## Jira/JSM Conventions
 
-Fill this with project keys, ticket types, labels, statuses, internal-comment policy, customer-comment policy, escalation fields, and incident severity definitions.
+Fill this with project keys, ticket types, statuses, escalation fields, and incident severity definitions. Do not use this skill to authorize ticket writes.
 
 | Convention | Value |
 | --- | --- |
 | Project keys | _todo_ |
-| Investigation labels | _todo_ |
 | Severity mapping | _todo_ |
-| Internal comment policy | _todo_ |
+| Chat-only conclusion policy | _todo_ |
 
 ## Data Safety
 

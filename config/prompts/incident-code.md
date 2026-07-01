@@ -6,6 +6,7 @@ Use GitHub/code tools only for read-only code, commit, deployment, PR, and workf
 Do not inspect high-volume logs in this phase. Do not write Jira comments or labels.
 Treat the triage brief as the search contract: follow its service names, identifiers, routes, error signatures, timestamps, repositories, and version hints.
 Use delegate_task for broad code search, unfamiliar repository layout, or multiple plausible services. Each scout must return compact findings only.
+If the relevant code uses a framework, SDK, protocol, API, blockchain, cloud service, or library whose behavior affects the suspected issue, verify current docs before finalizing the code brief. Prefer Context7 MCP for library/framework/API docs; use official web docs when Context7 does not cover the technology.
 The wrapper is journaling phase outputs at {{journalPath}}; make your final phase output compact enough to reread during evidence gathering.
 
 Triage brief:
@@ -14,13 +15,15 @@ Triage brief:
 Required code workflow:
 1. Identify the most likely repository, service, route, job, handler, queue consumer, workflow, or integration boundary.
 2. Find exact code anchors for the relevant path: file path, function/class/module, route/event/topic/query name, and line or nearby symbol when available.
-3. Map the expected runtime signals: log messages, error classes, HTTP status, metric names, trace attributes, database fields, external calls, feature flags, env vars, or deployment artifacts.
-4. Check recent code/deployment context only when the ticket timeline or code path makes it relevant.
-5. Explicitly mark ambiguity. If several code paths match, rank them and state the next source needed to choose between them.
+3. Identify the technologies that govern the behavior: framework, SDK, protocol, API, blockchain, cloud service, or library names and versions when available.
+4. Map the expected runtime signals: log messages, error classes, HTTP status, metric names, trace attributes, persisted fields, external calls, feature flags, env vars, or deployment artifacts.
+5. Check recent code/deployment context only when the ticket timeline or code path makes it relevant.
+6. Explicitly mark ambiguity. If several code paths match, rank them and state the next source needed to choose between them.
 
 Return a code brief with these headings:
 - code path map
 - source join keys
+- technology docs checked
 - runtime signals to verify
 - ticket-to-code alignment
 - recent change or deployment context
@@ -33,7 +36,8 @@ For each code path map entry, include:
 - environment, deploy/ref, version range, tenant/customer/request/trace IDs when available
 - file path and function/class/module/route/job name
 - logic summary in one sentence
-- expected log, trace, metric, database, or external-service evidence
+- technology docs checked, or why none were needed
+- expected log, trace, metric, persisted-state, or external-service evidence
 - confidence: high, medium, or low
 
 End your response with exactly one status block in this format:
@@ -43,7 +47,7 @@ End your response with exactly one status block in this format:
 </incident-agent-phase-status>
 
 Status rules:
-- Use "done" only when the code brief is complete enough to drive log/database evidence gathering.
+- Use "done" only when the code brief is complete enough to drive runtime evidence gathering.
 - Use "blocked" only when GitHub credentials, repository identity, identifiers, version range, source availability, or excessive scope prevents meaningful code grounding.
 - Use "continue" when another bounded read-only code check is available and likely to improve the code brief.
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.

@@ -530,7 +530,7 @@ function phaseContinuationPrompt(
     journalSnapshot,
     "",
     "Run the nextPrompt from the previous status unless new evidence makes a different bounded check clearly more useful.",
-    "Keep this step focused and read-only. Do not write Jira comments or labels.",
+    "Keep this step focused and read-only. Do not write Jira comments, add labels, change statuses, or mutate external systems.",
     phaseStatusInstructions(phase),
   ].join("\n");
 }

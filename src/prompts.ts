@@ -69,7 +69,7 @@ export function codeUnavailableBrief(reason: string, details: string): string {
     "- environment, deploy/ref, version range, tenant/customer/request/trace IDs when available: missing",
     "- file path and function/class/module/route/job name: missing",
     "- logic summary in one sentence: GitHub code grounding could not complete.",
-    "- expected log, trace, metric, database, or external-service evidence: use Jira/JSM identifiers only until code grounding is restored.",
+    "- expected log, trace, metric, persisted-state, or external-service evidence: use Jira/JSM identifiers only until code grounding is restored.",
     "- confidence: low",
     "",
     "source join keys",
@@ -216,6 +216,7 @@ function featureContext(settings: Settings): string {
   const features = [
     settings.features.sources.jiraJsm,
     settings.features.sources.github,
+    settings.features.sources.context7,
     settings.features.sources.coralogix,
     settings.features.sources.postgres,
   ];

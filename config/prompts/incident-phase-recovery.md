@@ -4,8 +4,8 @@ Recovery: the {{phase}} phase for incident ticket {{issueKey}} did not complete 
 
 Goal: provide a compact, usable phase result so the wrapper can continue the investigation.
 Do not restart a broad investigation. Use the journal and partial output first. If one small read-only tool check is needed, do only that.
-Do not write Jira comments or labels during recovery.
-Keep recovery output terse: at most 8 bullets total, no raw partial-output dump.
+Do not write Jira comments, add labels, change statuses, or mutate any external system during recovery.
+Keep recovery output terse: at most 5 bullets total, no raw partial-output dump.
 
 Failure:
 {{error}}
@@ -21,7 +21,7 @@ Original phase prompt:
 
 Return a compact recovery brief with these headings:
 - recovered phase
-- usable findings
+- possible reason or usable finding
 - evidence or partial evidence
 - confidence
 - what remains unknown

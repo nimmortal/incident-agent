@@ -12,6 +12,8 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
     JIRA_MCP_AUTH_HEADER: jiraMcpAuthHeader(process.env),
+    CONTEXT7_MCP_URL: process.env.CONTEXT7_MCP_URL || "https://mcp.context7.com/mcp",
+    CONTEXT7_API_KEY: process.env.CONTEXT7_API_KEY || "",
     HERMES_REASONING_EFFORT: process.env.HERMES_REASONING_EFFORT ?? "",
     HERMES_SHOW_REASONING: process.env.HERMES_SHOW_REASONING || "false",
     HERMES_REASONING_FULL: process.env.HERMES_REASONING_FULL || "false",
@@ -90,7 +92,10 @@ function writeRuntimeConfig(settings: Settings): void {
   mkdirSync(dirname(configPath), { recursive: true });
 
   const template = readFileSync(settings.hermesConfigTemplatePath, "utf8");
-  const config = setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled);
+  const config = configureContext7Auth(
+    setMcpServerEnabled(setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled), "context7", true),
+    Boolean(process.env.CONTEXT7_API_KEY?.trim()),
+  );
 
   writeFileSync(configPath, config);
 }
@@ -175,6 +180,14 @@ function setMcpServerEnabled(config: string, serverName: string, enabled: boolea
   }
 
   return config.replace(pattern, `$1${enabled ? "true" : "false"}`);
+}
+
+function configureContext7Auth(config: string, hasApiKey: boolean): string {
+  if (hasApiKey) {
+    return config;
+  }
+
+  return config.replace(/\n\s{4}headers:\n\s{6}CONTEXT7_API_KEY: "\$\{CONTEXT7_API_KEY\}"/, "");
 }
 
 function escapeRegExp(value: string): string {

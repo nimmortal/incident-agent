@@ -6,6 +6,7 @@ Use Jira MCP only for Jira/JSM operations. Do not write Jira comments or labels 
 Read the ticket, comments, links, status, labels, customer impact, affected services, timestamps, identifiers, and existing troubleshooting notes.
 Keep the triage brief terse: at most 2 bullets per heading, no ticket prose copied verbatim, no tool narration.
 Prefer a code-grounding scout before noisy log exploration when GitHub is configured and the ticket contains a service, route, job, error signature, workflow, repository, or version hint.
+If the ticket points to framework, SDK, protocol, API, blockchain, cloud service, or library behavior, include a documentation scout. Prefer Context7 MCP for library/framework/API docs.
 
 Return a compact triage brief with these headings:
 - ticket summary
@@ -15,6 +16,7 @@ Return a compact triage brief with these headings:
 - identifiers and query terms
 - source join keys
 - likely code entry points
+- technology docs to check
 - scout plan
 - immediate blockers or missing information
 

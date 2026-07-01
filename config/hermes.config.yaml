@@ -32,3 +32,12 @@ mcp_servers:
     tools:
       resources: false
       prompts: false
+  context7:
+    url: "${CONTEXT7_MCP_URL}"
+    headers:
+      CONTEXT7_API_KEY: "${CONTEXT7_API_KEY}"
+    enabled: true
+    timeout: 120
+    tools:
+      resources: false
+      prompts: false

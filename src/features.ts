@@ -4,6 +4,7 @@ export const featureIdSchema = z.enum([
   "provider:copilot",
   "source:jira-jsm",
   "source:github",
+  "source:context7",
   "source:coralogix",
   "source:postgres",
 ]);
@@ -28,6 +29,7 @@ export const featureRegistrySchema = z.object({
   sources: z.object({
     jiraJsm: featureSchema,
     github: featureSchema,
+    context7: featureSchema,
     coralogix: featureSchema,
     postgres: featureSchema,
   }),
@@ -48,6 +50,7 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
       github: feature("source:github", "source", "GitHub", "Code, commits, deployments, PRs, and workflow runs through gh.", [
         "GITHUB_TOKEN",
       ], env),
+      context7: feature("source:context7", "source", "Context7", "Current library, framework, SDK, protocol, and API documentation through MCP.", [], env),
       coralogix: feature("source:coralogix", "source", "Coralogix", "Logs, metrics, traces, and alerts through cx CLI.", [
         "CX_API_KEY",
         "CX_REGION",
@@ -75,6 +78,7 @@ export function listFeatures(registry: FeatureRegistry): Feature[] {
     registry.provider.copilot,
     registry.sources.jiraJsm,
     registry.sources.github,
+    registry.sources.context7,
     registry.sources.coralogix,
     registry.sources.postgres,
   ];
@@ -102,6 +106,8 @@ function getFeature(registry: FeatureRegistry, featureId: FeatureId): Feature {
       return registry.sources.jiraJsm;
     case "source:github":
       return registry.sources.github;
+    case "source:context7":
+      return registry.sources.context7;
     case "source:coralogix":
       return registry.sources.coralogix;
     case "source:postgres":

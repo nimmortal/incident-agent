@@ -59,7 +59,6 @@ export function loadSettings(): Settings {
   const defaultJql = [
     `project = ${jiraProjectKey}`,
     "AND statusCategory != Done",
-    "AND (labels is EMPTY OR labels not in (ai-investigated, ai-investigating))",
     "ORDER BY created ASC",
   ].join(" ");
 
