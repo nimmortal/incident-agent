@@ -10,6 +10,7 @@ The wrapper is journaling phase outputs at {{journalPath}}; make your final phas
 Keep the evidence brief terse: at most 2 bullets per heading and at most 8 evidence ledger entries. Prefer identifiers over prose.
 Use the code brief as the primary search contract for runtime checks. If runtime evidence does not match the expected code-path signals, preserve that mismatch as evidence instead of smoothing it over.
 For log evidence, always capture `subsystem=<value>` and `correlation_id=<value>` when present. Treat the subsystem value as the service key that should feed later GitHub/code exploration. Use correlation IDs to wire together the processing flow across log events, subsystems, traces, tickets, and code paths. If multiple subsystem values appear, rank them by relevance.
+For database evidence, start from the impacted service identified by the ticket, logs, or code brief. Use GitHub/code inspection to find the service's default config, datastore setting, repository/ORM/query code, migrations, and schema.table usage before querying Postgres. If the impacted service or code-derived table mapping is missing, run that bounded code check first or mark the DB check blocked; do not start from broad schema/table guessing.
 When the issue depends on a framework, SDK, protocol, API, blockchain, cloud service, or library behavior, verify the current docs before synthesis. Prefer Context7 MCP for library/framework/API docs; use official web docs when Context7 does not cover the technology.
 
 Triage brief:

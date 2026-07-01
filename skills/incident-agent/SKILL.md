@@ -51,7 +51,8 @@ Use correlation IDs to connect the processing flow across log events, subsystems
 Goal: Investigate one repository, deployment, commit range, workflow, or code path relevant to the incident.
 Context: <issue key or request>, <repo>, <service/component>, <time window or commit range>, <suspected files/functions>.
 Tools: Use gh, local read-only inspection, and loaded GitHub skills only. Do not change files, branches, PRs, releases, deployments, or workflow state.
-Return: repos/branches inspected; commands run; relevant commits/PRs/workflows with links or SHAs; files/functions implicated; confidence; unknowns; next step.
+When database state may matter, inspect service default config, env/config templates, ORM/repository code, migrations, and query builders to identify the datastore, schema, and tables the impacted service actually uses.
+Return: repos/branches inspected; commands run; relevant commits/PRs/workflows with links or SHAs; files/functions implicated; database config or schema.table usage when relevant; confidence; unknowns; next step.
 
 ### Documentation Scout
 
@@ -65,6 +66,8 @@ Return: documented behavior; version or docs scope; why it matters for this inci
 Goal: Verify one bounded read-only application-state hypothesis.
 Context: <issue key or request>, <tenant/user/order IDs>, <schemas/tables/entities>, <time window>, <safety constraints>.
 Tools: Use psql and loaded Postgres skill only. Read-only queries only; no locks, writes, migrations, or schema changes. Every query must use local timeouts, tight filters, and explicit limits.
+Start from the impacted service identified by the ticket, logs, or code brief. Prefer schema/table targets found through GitHub code/config inspection: service default config, datastore setting, repository/ORM/query code, migrations, or query builders.
+If the impacted service or code-derived schema.table mapping is missing, return that blocker instead of guessing from a broad database scan.
 Before table lookup, list visible non-system schemas unless the prompt already provides the exact schema-qualified table. Do not assume `public`.
 Return: schemas inspected; schema-qualified tables used; queries run; timeouts used; filters and limits; row counts; compact result summary; sensitive values redacted; confidence; unknowns; next query if needed.
 

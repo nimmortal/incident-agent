@@ -323,6 +323,10 @@ application schemas, declare the expected schema names and service ownership in
 `skills/company-context/SKILL.md`; the agent must still verify visible schemas
 through `information_schema` and use schema-qualified table names such as
 `schema.table`.
+Database investigation should start from the impacted service identified by the
+ticket or logs. The agent should then use GitHub/code inspection to find that
+service's default config, datastore setting, repository/ORM/query code,
+migrations, and schema/table usage before running bounded Postgres queries.
 The wrapper also sets `PGOPTIONS` for Hermes-launched commands whenever
 `DATABASE_URL` is configured: `default_transaction_read_only=on`, a statement
 timeout, a lock timeout, and an idle transaction timeout. Keep these values low;

@@ -7,6 +7,7 @@ description: Read Postgres data safely with psql for incident investigation. Use
 
 Use this skill when incident investigation needs evidence from the configured Postgres database.
 One `DATABASE_URL` points to one database. If that database contains multiple application schemas, discover and choose schemas inside the connected database; do not treat schemas as separate database URLs.
+Do not use Postgres as the first discovery source. Start from the impacted service identified by the ticket, logs, or code brief, then use code/config evidence to choose schema.table targets before querying state.
 
 ## Connection
 
@@ -28,19 +29,20 @@ Every query must have a bounded predicate or a small `LIMIT`; schema-discovery q
 
 ## Workflow
 
-1. Identify the entity being investigated: tenant, user, account, request ID, job ID, order ID, document ID, timestamp window, or service-specific key.
-2. Discover schemas before guessing table names:
+1. Identify the impacted service from the ticket, logs, or code brief, plus the entity being investigated: tenant, user, account, request ID, job ID, order ID, document ID, timestamp window, or service-specific key.
+2. Use code/config context before querying state: service default config, datastore setting, repository/ORM/query code, migrations, or query builders should point to candidate schemas and tables. If that mapping is missing, report the blocker instead of running broad table discovery.
+3. Discover schemas before querying table data:
    - list visible non-system schemas from `information_schema.schemata`
    - prefer company-context schema hints when present, but verify they exist
    - do not assume `public` unless schema discovery or the user identifies it
-3. Discover candidate tables with schema-qualified names:
+4. Discover candidate tables with schema-qualified names:
    - query `information_schema.tables` by `table_schema`
    - query `information_schema.columns` by `table_schema` and `table_name`
    - use `schema.table` in queries and summaries once a table is selected
-4. Read only the minimum rows needed to answer the incident question.
-5. Use tight filters, explicit limits, and the shortest useful time window.
-6. Cite schemas inspected, `schema.table` names, filters, row counts, and timestamps in the final answer.
-7. Do not expose secrets, tokens, passwords, private keys, or full personal data values. Mask sensitive fields in summaries.
+5. Read only the minimum rows needed to answer the incident question.
+6. Use tight filters, explicit limits, and the shortest useful time window.
+7. Cite impacted service, code/config basis, schemas inspected, `schema.table` names, filters, row counts, and timestamps in the final answer.
+8. Do not expose secrets, tokens, passwords, private keys, or full personal data values. Mask sensitive fields in summaries.
 
 ## Guardrails
 

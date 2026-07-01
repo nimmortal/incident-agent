@@ -16,9 +16,10 @@ Required code workflow:
 1. Identify the most likely repository, service, route, job, handler, queue consumer, workflow, or integration boundary.
 2. Find exact code anchors for the relevant path: file path, function/class/module, route/event/topic/query name, and line or nearby symbol when available.
 3. Identify the technologies that govern the behavior: framework, SDK, protocol, API, blockchain, cloud service, or library names and versions when available.
-4. Map the expected runtime signals: log messages, error classes, HTTP status, metric names, trace attributes, persisted fields, external calls, feature flags, env vars, or deployment artifacts.
-5. Check recent code/deployment context only when the ticket timeline or code path makes it relevant.
-6. Explicitly mark ambiguity. If several code paths match, rank them and state the next source needed to choose between them.
+4. If database state may matter, inspect the service's default config, env/config templates, ORM/repository code, migrations, and query builders to identify the database/schema/table names the impacted service actually uses. Do this before asking for Postgres queries.
+5. Map the expected runtime signals: log messages, error classes, HTTP status, metric names, trace attributes, persisted fields, external calls, feature flags, env vars, or deployment artifacts.
+6. Check recent code/deployment context only when the ticket timeline or code path makes it relevant.
+7. Explicitly mark ambiguity. If several code paths match, rank them and state the next source needed to choose between them.
 
 Return a code brief with these headings:
 - code path map
@@ -37,7 +38,7 @@ For each code path map entry, include:
 - file path and function/class/module/route/job name
 - logic summary in one sentence
 - technology docs checked, or why none were needed
-- expected log, trace, metric, persisted-state, or external-service evidence
+- expected log, trace, metric, persisted-state, schema.table, config, or external-service evidence
 - confidence: high, medium, or low
 
 End your response with exactly one status block in this format:
