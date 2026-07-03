@@ -17,7 +17,7 @@ import {
   logsPrompt,
   pollPrompt,
 } from "./prompts.ts";
-import { requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
+import { requireCopilotAuthUsable, requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { coralogixSkills, optionalGithubSkills, optionalSourceSkills, skillArgs, wrapperSkills } from "./skill-sets.ts";
 
 interface Runtime {
@@ -51,14 +51,16 @@ async function main(): Promise<void> {
     journal: InvestigationJournal,
     skills: string[],
     options: InvestigationRunOptions,
-  ): Promise<string> => {
+  ): Promise<PhaseResult> => {
     const { hermes, settings } = await getRuntime();
     const runSkills = wrapperSkills(skills);
     requireRuntimeForSkills(settings, runSkills);
 
+    const reasoningEffort = settings.investigationReasoningEffort[phase];
+    const envOverrides = reasoningEffort ? { HERMES_REASONING_EFFORT: reasoningEffort } : undefined;
     let nextPrompt = prompt;
-    let runOptions: HermesRunOptions = { streamOutput: options.stream };
-    const maxSteps = options.phaseMaxSteps ?? settings.investigationPhaseMaxSteps;
+    let runOptions: HermesRunOptions = { streamOutput: options.stream, envOverrides };
+    const maxSteps = options.phaseMaxSteps ?? settings.investigationPhaseMaxSteps[phase];
     let lastOutput = "";
 
     for (let step = 1; step <= maxSteps; step += 1) {
@@ -79,13 +81,13 @@ async function main(): Promise<void> {
 
           if (status.status === "done") {
             journal.append({ type: "phase_completed", phase, output, step, attempt, recovery });
-            return output || "(phase completed without captured stdout)";
+            return { brief: output || "(phase completed without captured stdout)", status };
           }
           if (status.status === "blocked") {
             const blocked = phaseBlockedResult(phase, status, output);
             journal.append({ type: "phase_blocked", phase, output: blocked, status, step, attempt, recovery });
             console.log(blocked);
-            return blocked;
+            return { brief: blocked, status };
           }
 
           nextPrompt = phaseContinuationPrompt(
@@ -95,7 +97,7 @@ async function main(): Promise<void> {
             compactPromptContext(output, maxContinuationOutputChars),
             journal.readCompact(maxContinuationJournalChars),
           );
-          runOptions = { continueSession: true, streamOutput: options.stream };
+          runOptions = { continueSession: true, streamOutput: options.stream, envOverrides };
           break;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -113,14 +115,14 @@ async function main(): Promise<void> {
               message,
               compactPromptContext(partialOutput, maxContinuationOutputChars),
             );
-            runOptions = { continueSession: true, streamOutput: options.stream };
+            runOptions = { continueSession: true, streamOutput: options.stream, envOverrides };
             continue;
           }
 
           const fallback = phaseFallbackResult(phase, message, partialOutput);
           journal.append({ type: "phase_fallback", phase, output: fallback, step });
           console.log(fallback);
-          return fallback;
+          return { brief: fallback };
         }
       }
     }
@@ -128,7 +130,7 @@ async function main(): Promise<void> {
     const fallback = phaseFallbackResult(phase, `Phase reached max steps (${maxSteps}) before reporting done or blocked`, lastOutput);
     journal.append({ type: "phase_fallback", phase, output: fallback, maxSteps });
     console.log(fallback);
-    return fallback;
+    return { brief: fallback };
   };
 
   const runPhasedInvestigation = async (issueKey: string, options: InvestigationRunOptions): Promise<void> => {
@@ -139,27 +141,57 @@ async function main(): Promise<void> {
     const { settings } = await getRuntime();
     requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
     requireCopilotTokenSupported();
+    await requireCopilotAuthUsable();
     const skills = optionalSourceSkills(settings);
     requireRuntimeForSkills(settings, wrapperSkills(skills));
 
     const journal = createInvestigationJournal(settings, issueKey);
     console.error(`[incident-agent] Investigation journal: ${journal.path}`);
 
-    const triageBrief = await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options);
+    const triageBrief = (await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options)).brief;
     const codePhaseOutput = settings.features.sources.github.enabled
-      ? await runInvestigationPhase("code", incidentCodePrompt(issueKey, settings, triageBrief, journal.path), journal, optionalGithubSkills(settings), options)
+      ? (await runInvestigationPhase("code", incidentCodePrompt(issueKey, settings, triageBrief, journal.path), journal, optionalGithubSkills(settings), options)).brief
       : codePhaseUnavailable(settings);
     const codeBrief = normalizeCodeBrief(codePhaseOutput);
-    const evidenceBrief = await runInvestigationPhase(
-      "evidence",
-      incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
+    let evidenceBrief = (
+      await runInvestigationPhase(
+        "evidence",
+        incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
+        journal,
+        skills,
+        options,
+      )
+    ).brief;
+    const synthesis = await runInvestigationPhase(
+      "synthesis",
+      incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path),
       journal,
       skills,
       options,
     );
+
+    const evidenceRequest = synthesis.status?.evidenceRequest?.trim();
+    if (!evidenceRequest) {
+      return;
+    }
+
+    console.error(`[incident-agent] Synthesis requested one targeted evidence re-entry: ${evidenceRequest}`);
+    evidenceBrief = (
+      await runInvestigationPhase(
+        "evidence",
+        targetedEvidencePrompt(
+          incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
+          evidenceRequest,
+          compactPromptContext(evidenceBrief, maxContinuationOutputChars),
+        ),
+        journal,
+        skills,
+        options,
+      )
+    ).brief;
     await runInvestigationPhase(
       "synthesis",
-      incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path),
+      finalSynthesisPrompt(incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path)),
       journal,
       skills,
       options,
@@ -170,6 +202,7 @@ async function main(): Promise<void> {
     const { hermes, settings } = await getRuntime();
     requireFeatures(settings.features, ["provider:copilot"]);
     requireCopilotTokenSupported();
+    await requireCopilotAuthUsable();
 
     const skills = wrapperSkills(optionalSourceSkills(settings));
     requireRuntimeForSkills(settings, skills);
@@ -451,6 +484,12 @@ interface StepStatus {
   summary: string;
   nextPrompt?: string;
   blockedBy?: string;
+  evidenceRequest?: string;
+}
+
+interface PhaseResult {
+  brief: string;
+  status?: StepStatus;
 }
 
 function parseGoalStatus(output: string): StepStatus | undefined {
@@ -487,6 +526,7 @@ function parseStepStatus(output: string, scope: "goal" | "phase"): StepStatus | 
     summary: parsed.summary,
     nextPrompt: typeof parsed.nextPrompt === "string" ? parsed.nextPrompt : undefined,
     blockedBy: typeof parsed.blockedBy === "string" ? parsed.blockedBy : undefined,
+    evidenceRequest: typeof parsed.evidenceRequest === "string" ? parsed.evidenceRequest : undefined,
   };
 }
 
@@ -563,6 +603,30 @@ function compactPromptContext(value: string, maxChars: number): string {
     value.slice(0, headChars),
     `[truncated ${value.length - maxChars} chars; keeping head and tail]`,
     value.slice(-tailChars),
+  ].join("\n");
+}
+
+function targetedEvidencePrompt(baseEvidencePrompt: string, evidenceRequest: string, previousEvidenceBrief: string): string {
+  return [
+    baseEvidencePrompt,
+    "",
+    "Targeted evidence re-entry requested by synthesis:",
+    evidenceRequest,
+    "",
+    "Previous evidence brief:",
+    previousEvidenceBrief,
+    "",
+    "Run only the bounded read-only checks needed to answer the targeted request.",
+    "Then return an updated full evidence brief with the same headings, merging the previous entries with the new findings.",
+  ].join("\n");
+}
+
+function finalSynthesisPrompt(baseSynthesisPrompt: string): string {
+  return [
+    baseSynthesisPrompt,
+    "",
+    "This is the final synthesis pass: the one targeted evidence re-entry has already been used.",
+    "Do not include evidenceRequest in the status block; conclude with the evidence available.",
   ].join("\n");
 }
 

@@ -7,10 +7,14 @@ import { managedSkillTargets } from "./skill-sets.ts";
 export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
   writeRuntimeConfig(settings);
   seedHermesSkills(settings);
+  const repoCacheDir = resolve(settings.repoCacheDir);
+  mkdirSync(repoCacheDir, { recursive: true });
   const env = {
     ...process.env,
     HOME: runtimeHome(settings),
     HERMES_HOME: runtimeHermesHome(settings),
+    REPO_CACHE_DIR: repoCacheDir,
+    SCHEMA_CACHE_PATH: resolve(settings.schemaCachePath),
     JIRA_MCP_AUTH_HEADER: jiraMcpAuthHeader(process.env),
     CONTEXT7_MCP_URL: process.env.CONTEXT7_MCP_URL || "https://mcp.context7.com/mcp",
     CONTEXT7_API_KEY: process.env.CONTEXT7_API_KEY || "",
@@ -124,6 +128,42 @@ function seedHermesSkills(settings: Settings): void {
     mkdirSync(dirname(targetPath), { recursive: true });
     cpSync(sourcePath, targetPath, { recursive: true });
   }
+
+  removeDuplicateManagedSkills(targetDir);
+}
+
+// Hermes resolves skills by directory name across the whole tree, so a stale
+// copy of a managed skill at any other path causes a name collision and makes
+// skill resolution nondeterministic.
+function removeDuplicateManagedSkills(targetDir: string): void {
+  for (const skill of managedSkillTargets) {
+    const managedPath = join(targetDir, skill.target);
+    for (const duplicate of findAllHermesSkillPaths(targetDir, skill.name)) {
+      if (duplicate !== managedPath) {
+        rmSync(duplicate, { recursive: true, force: true });
+      }
+    }
+  }
+}
+
+function findAllHermesSkillPaths(skillsPath: string, skillName: string): string[] {
+  if (!existsSync(skillsPath)) {
+    return [];
+  }
+
+  const found: string[] = [];
+  if (existsSync(join(skillsPath, skillName, "SKILL.md"))) {
+    found.push(join(skillsPath, skillName));
+  }
+
+  for (const entry of readdirSync(skillsPath, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === skillName) {
+      continue;
+    }
+    found.push(...findAllHermesSkillPaths(join(skillsPath, entry.name), skillName));
+  }
+
+  return found;
 }
 
 function jiraMcpAuthHeader(env: NodeJS.ProcessEnv): string {

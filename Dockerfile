@@ -8,7 +8,7 @@ ENV CX_VERSION=0.1.10
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git gh postgresql-client \
+  && apt-get install -y --no-install-recommends ca-certificates curl git gh postgresql-client ripgrep \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /home/agent/.local/bin \

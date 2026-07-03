@@ -3,8 +3,10 @@
 Phase 2: ground incident ticket {{issueKey}} in GitHub code.
 
 Use GitHub/code tools only for read-only code, commit, deployment, PR, and workflow inspection.
+Follow the github-code-exploration skill for code reading: resolve the repository through the company-context service map, shallow-clone into the persistent REPO_CACHE_DIR cache (reuse existing clones), and search with ripgrep and local git history. Use gh API commands only for PRs, workflow runs, deployments, and releases; avoid gh code-search APIs unless the owning repository is unknown.
 Do not inspect high-volume logs in this phase. Do not write Jira comments or labels.
 Treat the triage brief as the search contract: follow its service names, identifiers, routes, error signatures, timestamps, repositories, and version hints.
+When the triage brief lists competing hypotheses, ground each plausible hypothesis in code, not only the leading one; the evidence phase needs anchors to discriminate between them.
 Use delegate_task for broad code search, unfamiliar repository layout, or multiple plausible services. Each scout must return compact findings only.
 If the relevant code uses a framework, SDK, protocol, API, blockchain, cloud service, or library whose behavior affects the suspected issue, verify current docs before finalizing the code brief. Prefer Context7 MCP for library/framework/API docs; use official web docs when Context7 does not cover the technology.
 The wrapper is journaling phase outputs at {{journalPath}}; make your final phase output compact enough to reread during evidence gathering.

@@ -6,6 +6,7 @@
   "scripts": {
     "agent": "tsx src/agent-cli.ts",
     "doctor": "tsx src/doctor.ts",
+    "schema-cache": "tsx src/schema-cache.ts",
     "goal": "tsx src/agent-cli.ts goal",
     "investigate": "tsx src/agent-cli.ts investigate",
     "test": "tsx --test src/**/*.test.ts",

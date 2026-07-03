@@ -307,6 +307,14 @@ wrapper also writes a `gh` hosts file under `HERMES_RUNTIME_HOME` and sets
 `GH_CONFIG_DIR` for Hermes. This lets Hermes use `gh` without exposing the token
 as a terminal environment variable.
 
+For code reading, the repository-local `github-code-exploration` skill tells
+Hermes to shallow-clone repositories into a persistent cache (`REPO_CACHE_DIR`,
+default `data/repos`, preserved across runs by the `./data` bind mount) and
+search them locally with ripgrep and git history instead of the rate-limited
+GitHub code-search APIs. `gh` API calls stay reserved for PRs, workflow runs,
+deployments, and releases. The image installs `ripgrep` for this. The cache is
+local scratch space; the skill never pushes or mutates GitHub state.
+
 For Coralogix access, the container has `cx` installed and the image build
 installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills
 into an image seed profile. Before each Hermes run, the wrapper refreshes
@@ -327,11 +335,22 @@ Database investigation should start from the impacted service identified by the
 ticket or logs. The agent should then use GitHub/code inspection to find that
 service's default config, datastore setting, repository/ORM/query code,
 migrations, and schema/table usage before running bounded Postgres queries.
+When the code-derived mapping is missing, the agent falls back to bounded
+keyword discovery (schema cache or `information_schema` with `ILIKE` filters
+and small limits) marked as lower confidence, instead of blocking the check.
+
+Run `npm run schema-cache` to snapshot the visible schemas, tables, and columns
+into `SCHEMA_CACHE_PATH` (default `data/schema-cache.md`). The
+`postgres-readonly` skill reads that snapshot first so investigations do not
+spend live queries on catalog discovery; it still verifies the chosen
+`schema.table` live before reading data. Regenerate the snapshot after
+migrations.
 The wrapper also sets `PGOPTIONS` for Hermes-launched commands whenever
 `DATABASE_URL` is configured: `default_transaction_read_only=on`, a statement
 timeout, a lock timeout, and an idle transaction timeout. Keep these values low;
 if a query times out, narrow the predicate or time window instead of raising the
-timeout.
+timeout. When `DATABASE_URL` points to a read replica, higher statement
+timeouts are acceptable.
 
 For technology documentation, Hermes is configured with the Context7 remote MCP
 server. Investigation prompts tell Hermes to use Context7 for current library,
@@ -362,6 +381,7 @@ npm run agent -- ui --dashboard
 npm run ui
 npm run dashboard
 npm run poll
+npm run schema-cache
 ```
 
 Session options:
@@ -452,12 +472,28 @@ or `xhigh`. Leave it empty to use Hermes' default. `HERMES_SHOW_REASONING`
 controls whether Hermes displays model reasoning when the provider returns it;
 keep it off for normal incident summaries.
 
+The `investigate` command additionally supports per-phase reasoning effort:
+
+```bash
+HERMES_REASONING_EFFORT_TRIAGE=
+HERMES_REASONING_EFFORT_CODE=
+HERMES_REASONING_EFFORT_EVIDENCE=high
+HERMES_REASONING_EFFORT_SYNTHESIS=high
+```
+
+Empty values inherit `HERMES_REASONING_EFFORT`. Evidence and synthesis default
+to `high` because those phases decide analysis quality; clear them if cost or
+latency matters more.
+
 Shared incident-investigation behavior lives in the local Hermes skill
 `skills/incident-agent` and is preloaded for wrapper commands, `npm run ui`, and
 scheduled polling. That is the part Hermes chat sessions can use directly.
 Company-specific service maps, ownership, telemetry conventions, data-safety
-rules, and escalation paths live in `skills/company-context` and are preloaded
-the same way.
+rules, escalation paths, and a Confirmed Learnings table live in
+`skills/company-context` and are preloaded the same way. Synthesis proposes
+learning entries as chat-only `proposed learning:` lines; a human reviews and
+pastes them into the table so recurring incident classes resolve faster on the
+next run.
 
 Command-specific prompt templates live under `config/prompts` by default and are
 rendered by the wrapper before launching Hermes. Override the directory with:
@@ -480,7 +516,10 @@ HERMES_IDLE_TIMEOUT_SECONDS=300
 HERMES_TERMINATE_GRACE_SECONDS=10
 HERMES_HEARTBEAT_SECONDS=60
 HERMES_RECOVERY_ATTEMPTS=1
-INVESTIGATION_PHASE_MAX_STEPS=3
+INVESTIGATION_TRIAGE_MAX_STEPS=2
+INVESTIGATION_CODE_MAX_STEPS=3
+INVESTIGATION_EVIDENCE_MAX_STEPS=6
+INVESTIGATION_SYNTHESIS_MAX_STEPS=2
 ```
 
 `HERMES_TIMEOUT_SECONDS` is the max runtime for one Hermes command or
@@ -495,8 +534,10 @@ timeouts. For `investigate`, each phase turn must report `continue`, `done`, or
 `blocked`. A `continue` status repeats the same phase in the same Hermes session
 with the requested next bounded step. A `done` status advances to the next
 phase. A `blocked` status returns a low-confidence blocked brief that the next
-phase can use. `INVESTIGATION_PHASE_MAX_STEPS` caps turns per phase; the
-`investigate --phase-max-steps` option can override it for one run. A failed or
+phase can use. `INVESTIGATION_<PHASE>_MAX_STEPS` caps turns per phase (evidence
+gets the largest default budget because that is where the work happens);
+setting `INVESTIGATION_PHASE_MAX_STEPS` forces one cap for every phase, and the
+`investigate --phase-max-steps` option overrides all of them for one run. A failed or
 timed-out phase step is retried with a recovery prompt up to
 `HERMES_RECOVERY_ATTEMPTS` times. If recovery still cannot get a normal phase
 result, the wrapper records the failure in the journal and returns a
@@ -546,7 +587,13 @@ End-to-end `investigate` runs are split into four wrapper-orchestrated phases:
 - `evidence`: use the triage and code briefs to delegate bounded source scouts
   and produce an evidence brief.
 - `synthesis`: use the briefs to return a chat-only list of possible reasons,
-  confidence, and the next blocker/check when needed.
+  confidence, ruled-out alternatives, and the next blocker/check when needed.
+
+Synthesis can request one targeted evidence re-entry: when its status block
+includes an `evidenceRequest`, the wrapper re-runs the evidence phase once with
+that bounded request and then runs a final synthesis pass. This keeps the
+pipeline effectively linear while letting synthesis close a single material
+evidence gap instead of shipping it as an unchecked "next check".
 
 Within each phase Hermes must end every turn with an
 `<incident-agent-phase-status>` block. The wrapper parses that block to decide
@@ -566,7 +613,7 @@ The local wrapper treats capabilities as provider/source modules:
 - Provider: GitHub Copilot is mandatory for every Hermes run.
 - Model: Hermes is pinned to `gpt-5.4` through `config/hermes.config.yaml`.
 - Source: Jira/JSM provides read-only tickets through MCP.
-- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh` and bundled GitHub skills.
+- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh`, bundled GitHub skills, and the repository-local `github-code-exploration` clone-cache skill.
 - Source: Context7 provides current technology documentation through MCP.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
 - Source: Postgres provides read-only database evidence through `psql` and a repository-local skill.
@@ -575,9 +622,15 @@ Run `npm run doctor` to see which modules are enabled. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
 fail before starting Hermes. Use `npm run doctor -- --verify-sources` for
 opt-in live probes of configured sources. The live probes intentionally stay
-conservative: GitHub checks `gh auth status`, Postgres runs a read-only
+conservative: Copilot validates the configured token against the Copilot token
+exchange, GitHub checks `gh auth status`, Postgres runs a read-only
 `SELECT now()`, Jira MCP checks endpoint reachability/auth status, and Coralogix
 is left unprobed until a safe account-specific read query is configured.
+
+The `investigate` and `goal` commands also run the Copilot token-exchange
+probe before starting, so bad Copilot credentials fail fast instead of
+degrading a multi-phase investigation into low-confidence fallback briefs
+mid-run. Network problems reaching the exchange endpoint only log a warning.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the

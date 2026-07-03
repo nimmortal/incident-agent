@@ -18,11 +18,15 @@ test("incident prompt phases render code grounding and source alignment contract
 
   assert.match(incidentTriagePrompt("JSM-123", config), /likely code entry points/);
   assert.match(incidentTriagePrompt("JSM-123", config), /source join keys/);
+  assert.match(incidentTriagePrompt("JSM-123", config), /competing hypotheses/);
+  assert.match(incidentTriagePrompt("JSM-123", config), /discriminating evidence/);
 
   const code = incidentCodePrompt("JSM-123", config, triageBrief, "data/investigations/JSM-123/run.jsonl");
   assert.match(code, /Phase 2: ground incident ticket JSM-123 in GitHub code/);
   assert.match(code, /runtime signals to verify/);
   assert.match(code, /service=payments/);
+  assert.match(code, /github-code-exploration/);
+  assert.match(code, /REPO_CACHE_DIR/);
 
   const evidence = incidentEvidenceWithCodePrompt(
     "JSM-123",
@@ -34,6 +38,9 @@ test("incident prompt phases render code grounding and source alignment contract
   assert.match(evidence, /Phase 3: gather bounded evidence/);
   assert.match(evidence, /source alignment/);
   assert.match(evidence, /repo=payments-api/);
+  assert.match(evidence, /hypothesis status/);
+  assert.match(evidence, /SCHEMA_CACHE_PATH/);
+  assert.match(evidence, /keyword discovery/);
 
   const synthesis = incidentSynthesisWithCodePrompt(
     "JSM-123",
@@ -49,6 +56,9 @@ test("incident prompt phases render code grounding and source alignment contract
   assert.match(synthesis, /possible reason/);
   assert.match(synthesis, /ticket, code, docs, and runtime evidence align/);
   assert.match(synthesis, /trace-1/);
+  assert.match(synthesis, /ruled out/);
+  assert.match(synthesis, /evidenceRequest/);
+  assert.match(synthesis, /proposed learning/);
 });
 
 test("code unavailable brief preserves structured code contract for downstream evidence", () => {
@@ -87,12 +97,15 @@ function settings(): Settings {
     investigationJournalDir: "data/investigations",
     hermesSkillsSeedHome: "/opt/hermes-seed-home",
     hermesLocalSkillsPath: "skills",
+    repoCacheDir: "data/repos",
+    schemaCachePath: "data/schema-cache.md",
     hermesTimeoutSeconds: 900,
     hermesIdleTimeoutSeconds: 300,
     hermesTerminateGraceSeconds: 10,
     hermesHeartbeatSeconds: 60,
     hermesRecoveryAttempts: 1,
-    investigationPhaseMaxSteps: 3,
+    investigationPhaseMaxSteps: { triage: 2, code: 3, evidence: 6, synthesis: 2 },
+    investigationReasoningEffort: { triage: "", code: "", evidence: "high", synthesis: "high" },
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",
     failedLabel: "ai-investigation-failed",

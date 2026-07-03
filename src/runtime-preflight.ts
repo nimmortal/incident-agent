@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 
 import type { Settings } from "./config.ts";
 import { hasHermesSkill, runtimeSkillsPath } from "./hermes-config.ts";
-import { coralogixSkills, githubSkillNames, postgresSkills, skillName } from "./skill-sets.ts";
+import { coralogixSkills, githubCodeExplorationSkill, githubSkillNames, postgresSkills, skillName } from "./skill-sets.ts";
 
-const copilotTokenEnvVars = ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"] as const;
+const copilotTokenEnvVar = "COPILOT_GITHUB_TOKEN" as const;
 
 export function requireCopilotTokenSupported(): void {
   const token = selectedCopilotToken();
@@ -45,27 +45,78 @@ export function copilotAuthFailureHint(output: string): string | undefined {
   return lines.length > 0 ? ["Copilot auth hint:", ...lines.map((line) => `- ${line}`)].join("\n") : undefined;
 }
 
+export interface CopilotAuthProbeResult {
+  status: "ok" | "auth-failed" | "unreachable" | "skipped";
+  detail: string;
+}
+
+// Exchanges the configured Copilot token for a Copilot session token, the same
+// call Hermes makes on its first model request. This surfaces bad credentials
+// before a multi-phase investigation starts instead of mid-phase.
+export async function probeCopilotAuth(): Promise<CopilotAuthProbeResult> {
+  const token = selectedCopilotToken();
+  if (!token) {
+    return { status: "skipped", detail: "COPILOT_GITHUB_TOKEN is not configured" };
+  }
+
+  try {
+    const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      method: "GET",
+      headers: {
+        Authorization: `token ${token.value}`,
+        "Copilot-Integration-Id": process.env.COPILOT_INTEGRATION_ID?.trim() || "copilot-developer-cli",
+        "User-Agent": "incident-agent-preflight",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.ok) {
+      return { status: "ok", detail: `${token.envVar} accepted by Copilot token exchange` };
+    }
+    if (response.status === 401 || response.status === 403) {
+      const body = (await response.text().catch(() => "")).slice(0, 300);
+      return {
+        status: "auth-failed",
+        detail: [`${token.envVar} rejected by Copilot token exchange (${response.status})`, body, copilotAuthFailureHint(body)]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    }
+    return { status: "unreachable", detail: `Copilot token exchange returned ${response.status}; continuing without preflight` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: "unreachable", detail: `Copilot token exchange not reachable (${message}); continuing without preflight` };
+  }
+}
+
+export async function requireCopilotAuthUsable(): Promise<void> {
+  const probe = await probeCopilotAuth();
+  if (probe.status === "auth-failed") {
+    throw new Error(`Copilot authentication preflight failed.\n${probe.detail}`);
+  }
+  if (probe.status === "unreachable") {
+    console.error(`[incident-agent] ${probe.detail}`);
+  }
+}
+
 type CopilotTokenKind = "classic-pat" | "fine-grained-pat" | "oauth" | "unknown";
 
 interface SelectedCopilotToken {
-  envVar: (typeof copilotTokenEnvVars)[number];
+  envVar: typeof copilotTokenEnvVar;
   kind: CopilotTokenKind;
+  value: string;
 }
 
 function selectedCopilotToken(): SelectedCopilotToken | undefined {
-  for (const envVar of copilotTokenEnvVars) {
-    const value = process.env[envVar]?.trim();
-    if (!value) {
-      continue;
-    }
-
-    return {
-      envVar,
-      kind: copilotTokenKind(value),
-    };
+  const value = process.env[copilotTokenEnvVar]?.trim();
+  if (!value) {
+    return undefined;
   }
 
-  return undefined;
+  return {
+    envVar: copilotTokenEnvVar,
+    kind: copilotTokenKind(value),
+    value,
+  };
 }
 
 function copilotTokenKind(value: string): CopilotTokenKind {
@@ -84,8 +135,14 @@ function copilotTokenKind(value: string): CopilotTokenKind {
 export function requireRuntimeForSkills(settings: Settings, skills: string[]): void {
   const missing: string[] = [];
 
-  if (skills.some((skill) => githubSkillNames.includes(skillName(skill) as (typeof githubSkillNames)[number])) && !commandExists("gh")) {
+  const needsGithubCli =
+    skills.some((skill) => githubSkillNames.includes(skillName(skill) as (typeof githubSkillNames)[number])) ||
+    skills.includes(githubCodeExplorationSkill);
+  if (needsGithubCli && !commandExists("gh")) {
     missing.push("gh CLI");
+  }
+  if (skills.includes(githubCodeExplorationSkill) && !commandExists("git")) {
+    missing.push("git");
   }
   if (skills.some((skill) => coralogixSkills.includes(skill as (typeof coralogixSkills)[number])) && !commandExists("cx")) {
     missing.push("cx CLI");

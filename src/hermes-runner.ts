@@ -28,7 +28,7 @@ export class HermesRunner {
       let forceKillTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(this.binary, args, {
-        env: this.env,
+        env: options.envOverrides ? { ...this.env, ...options.envOverrides } : this.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -200,6 +200,7 @@ export interface HermesRunOptions {
   continueSession?: boolean | string;
   resumeSessionId?: string;
   streamOutput?: boolean;
+  envOverrides?: Record<string, string>;
 }
 
 function sessionArgs(options: HermesRunOptions): string[] {

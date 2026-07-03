@@ -69,6 +69,14 @@ Fill this with sensitive fields, PII rules, tenant isolation constraints, allowe
 | Personal data | Mask unless exact values are required and allowed. |
 | _todo_ | _todo_ |
 
+## Confirmed Learnings
+
+Reusable facts confirmed by past investigations: service-to-repository mappings, telemetry subsystem names, schema.table ownership, recurring failure signatures, and confirmed root-cause patterns. Synthesis proposes entries as a chat-only "proposed learning:" line; a human reviews and pastes them here. Treat entries as strong hints, not ground truth — re-verify when evidence disagrees.
+
+| Date | Service | Learning | Evidence (ticket/commit/query) |
+| --- | --- | --- | --- |
+| _todo_ | _todo_ | _todo_ | _todo_ |
+
 ## Escalation And Follow-Up
 
 Fill this with team aliases, Slack channels, on-call groups, escalation thresholds, follow-up issue conventions, and postmortem requirements.

@@ -12,6 +12,7 @@ import {
   runtimeSkillsPath,
   skillsSeedPath,
 } from "./hermes-config.ts";
+import { probeCopilotAuth } from "./runtime-preflight.ts";
 import { managedSkills } from "./skill-sets.ts";
 
 async function main(): Promise<void> {
@@ -103,10 +104,22 @@ async function main(): Promise<void> {
 
 async function verifyLiveSources(): Promise<void> {
   console.log("\nLive Source Probes:");
+  await verifyCopilot();
   await verifyJiraMcp();
   verifyGitHub();
   verifyCoralogix();
   verifyPostgres();
+}
+
+async function verifyCopilot(): Promise<void> {
+  const probe = await probeCopilotAuth();
+  const label = { ok: "authenticated", "auth-failed": "auth failed", unreachable: "failed", skipped: "skipped" }[probe.status];
+  console.log(`- Copilot: ${label} (${probe.detail.split("\n")[0]})`);
+  if (probe.status === "auth-failed" && probe.detail.includes("\n")) {
+    for (const line of probe.detail.split("\n").slice(1)) {
+      console.log(`    ${line}`);
+    }
+  }
 }
 
 async function verifyJiraMcp(): Promise<void> {

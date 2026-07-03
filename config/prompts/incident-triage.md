@@ -4,11 +4,11 @@ Phase 1: triage incident ticket {{issueKey}}.
 
 Use Jira MCP only for Jira/JSM operations. Do not write Jira comments or labels in this phase.
 Read the ticket, comments, links, status, labels, customer impact, affected services, timestamps, identifiers, and existing troubleshooting notes.
-Keep the triage brief terse: at most 2 bullets per heading, no ticket prose copied verbatim, no tool narration.
+The triage brief is machine-to-machine input for the code and evidence phases, not a user answer: include every identifier, timestamp, service hint, and error signature that could matter downstream. Do not copy ticket prose verbatim and do not narrate tool usage, but never drop a concrete identifier to save space.
 Prefer a code-grounding scout before noisy log exploration when GitHub is configured and the ticket contains a service, route, job, error signature, workflow, repository, or version hint.
 If the ticket points to framework, SDK, protocol, API, blockchain, cloud service, or library behavior, include a documentation scout. Prefer Context7 MCP for library/framework/API docs.
 
-Return a compact triage brief with these headings:
+Return a triage brief with these headings:
 - ticket summary
 - customer impact
 - affected systems or services
@@ -16,9 +16,17 @@ Return a compact triage brief with these headings:
 - identifiers and query terms
 - source join keys
 - likely code entry points
+- competing hypotheses
 - technology docs to check
 - scout plan
 - immediate blockers or missing information
+
+For competing hypotheses, state 2 or 3 plausible, materially different explanations of the incident. For each, include:
+- hypothesis: one sentence
+- discriminating evidence: what observation would confirm it or rule it out
+- which planned scout produces that observation
+
+If only one explanation is plausible, say why the alternatives were already excluded by ticket facts.
 
 For each scout in the scout plan, include:
 - source: Jira, Coralogix, GitHub, Postgres, or other

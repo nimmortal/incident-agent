@@ -3,6 +3,22 @@ import { cleanEnv, num, str } from "envalid";
 import { z } from "zod";
 import { buildFeatures, featureRegistrySchema } from "./features.ts";
 
+const reasoningEffortSchema = z.union([z.literal(""), z.enum(["none", "minimal", "low", "medium", "high", "xhigh"])]);
+
+const investigationPhaseSettingsSchema = z.object({
+  triage: z.number().int().positive(),
+  code: z.number().int().positive(),
+  evidence: z.number().int().positive(),
+  synthesis: z.number().int().positive(),
+});
+
+const investigationReasoningEffortSchema = z.object({
+  triage: reasoningEffortSchema,
+  code: reasoningEffortSchema,
+  evidence: reasoningEffortSchema,
+  synthesis: reasoningEffortSchema,
+});
+
 const settingsSchema = z.object({
   features: featureRegistrySchema,
   jiraProjectKey: z.string().min(1),
@@ -17,12 +33,15 @@ const settingsSchema = z.object({
   investigationJournalDir: z.string().min(1),
   hermesSkillsSeedHome: z.string().min(1),
   hermesLocalSkillsPath: z.string().min(1),
+  repoCacheDir: z.string().min(1),
+  schemaCachePath: z.string().min(1),
   hermesTimeoutSeconds: z.number().int().positive(),
   hermesIdleTimeoutSeconds: z.number().int().nonnegative(),
   hermesTerminateGraceSeconds: z.number().int().positive(),
   hermesHeartbeatSeconds: z.number().int().positive(),
   hermesRecoveryAttempts: z.number().int().nonnegative(),
-  investigationPhaseMaxSteps: z.number().int().positive(),
+  investigationPhaseMaxSteps: investigationPhaseSettingsSchema,
+  investigationReasoningEffort: investigationReasoningEffortSchema,
   investigatingLabel: z.string().min(1),
   investigatedLabel: z.string().min(1),
   failedLabel: z.string().min(1),
@@ -47,12 +66,22 @@ export function loadSettings(): Settings {
     INVESTIGATION_JOURNAL_DIR: str({ default: "data/investigations" }),
     HERMES_SKILLS_SEED_HOME: str({ default: "/opt/hermes-seed-home" }),
     HERMES_LOCAL_SKILLS_PATH: str({ default: "skills" }),
+    REPO_CACHE_DIR: str({ default: "data/repos" }),
+    SCHEMA_CACHE_PATH: str({ default: "data/schema-cache.md" }),
     HERMES_TIMEOUT_SECONDS: num({ default: 900 }),
     HERMES_IDLE_TIMEOUT_SECONDS: num({ default: 300 }),
     HERMES_TERMINATE_GRACE_SECONDS: num({ default: 10 }),
     HERMES_HEARTBEAT_SECONDS: num({ default: 60 }),
     HERMES_RECOVERY_ATTEMPTS: num({ default: 1 }),
-    INVESTIGATION_PHASE_MAX_STEPS: num({ default: 3 }),
+    INVESTIGATION_PHASE_MAX_STEPS: str({ default: "" }),
+    INVESTIGATION_TRIAGE_MAX_STEPS: num({ default: 2 }),
+    INVESTIGATION_CODE_MAX_STEPS: num({ default: 3 }),
+    INVESTIGATION_EVIDENCE_MAX_STEPS: num({ default: 6 }),
+    INVESTIGATION_SYNTHESIS_MAX_STEPS: num({ default: 2 }),
+    HERMES_REASONING_EFFORT_TRIAGE: str({ default: "" }),
+    HERMES_REASONING_EFFORT_CODE: str({ default: "" }),
+    HERMES_REASONING_EFFORT_EVIDENCE: str({ default: "high" }),
+    HERMES_REASONING_EFFORT_SYNTHESIS: str({ default: "high" }),
   });
 
   const jiraProjectKey = env.JIRA_PROJECT_KEY;
@@ -76,12 +105,20 @@ export function loadSettings(): Settings {
     investigationJournalDir: env.INVESTIGATION_JOURNAL_DIR,
     hermesSkillsSeedHome: env.HERMES_SKILLS_SEED_HOME,
     hermesLocalSkillsPath: env.HERMES_LOCAL_SKILLS_PATH,
+    repoCacheDir: env.REPO_CACHE_DIR,
+    schemaCachePath: env.SCHEMA_CACHE_PATH,
     hermesTimeoutSeconds: env.HERMES_TIMEOUT_SECONDS,
     hermesIdleTimeoutSeconds: env.HERMES_IDLE_TIMEOUT_SECONDS,
     hermesTerminateGraceSeconds: env.HERMES_TERMINATE_GRACE_SECONDS,
     hermesHeartbeatSeconds: env.HERMES_HEARTBEAT_SECONDS,
     hermesRecoveryAttempts: env.HERMES_RECOVERY_ATTEMPTS,
-    investigationPhaseMaxSteps: env.INVESTIGATION_PHASE_MAX_STEPS,
+    investigationPhaseMaxSteps: investigationPhaseMaxSteps(env),
+    investigationReasoningEffort: {
+      triage: env.HERMES_REASONING_EFFORT_TRIAGE,
+      code: env.HERMES_REASONING_EFFORT_CODE,
+      evidence: env.HERMES_REASONING_EFFORT_EVIDENCE,
+      synthesis: env.HERMES_REASONING_EFFORT_SYNTHESIS,
+    },
     investigatingLabel: "ai-investigating",
     investigatedLabel: "ai-investigated",
     failedLabel: "ai-investigation-failed",
@@ -94,6 +131,32 @@ export function validateSettings(settings: Settings): void {
 
 function loadEnvFile(path: string): void {
   dotenv.config({ path, override: false, quiet: true });
+}
+
+interface PhaseStepEnv {
+  INVESTIGATION_PHASE_MAX_STEPS: string;
+  INVESTIGATION_TRIAGE_MAX_STEPS: number;
+  INVESTIGATION_CODE_MAX_STEPS: number;
+  INVESTIGATION_EVIDENCE_MAX_STEPS: number;
+  INVESTIGATION_SYNTHESIS_MAX_STEPS: number;
+}
+
+function investigationPhaseMaxSteps(env: PhaseStepEnv): Settings["investigationPhaseMaxSteps"] {
+  const globalOverride = env.INVESTIGATION_PHASE_MAX_STEPS.trim();
+  if (globalOverride) {
+    const parsed = Number.parseInt(globalOverride, 10);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new Error(`INVESTIGATION_PHASE_MAX_STEPS must be a positive integer, got ${globalOverride}`);
+    }
+    return { triage: parsed, code: parsed, evidence: parsed, synthesis: parsed };
+  }
+
+  return {
+    triage: env.INVESTIGATION_TRIAGE_MAX_STEPS,
+    code: env.INVESTIGATION_CODE_MAX_STEPS,
+    evidence: env.INVESTIGATION_EVIDENCE_MAX_STEPS,
+    synthesis: env.INVESTIGATION_SYNTHESIS_MAX_STEPS,
+  };
 }
 
 function splitArgs(value: string): string[] {
