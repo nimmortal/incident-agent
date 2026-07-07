@@ -193,12 +193,13 @@ HERMES_SKILLS_SEED_HOME="$HOME" npm run agent -- ask "Check whether service api 
 Install the Coralogix skills into your normal host skill directory first:
 
 ```bash
-npx skills add coralogix/cx-cli \
-  --agent github-copilot \
-  --skill cx-telemetry-querying \
-  --skill cx-incident-management \
-  --copy \
-  -y
+for skill in cx-telemetry-querying cx-cases; do
+  npx skills add coralogix/cx-cli \
+    --agent github-copilot \
+    --skill "$skill" \
+    --copy \
+    -y
+done
 ```
 
 The Docker image already includes Hermes' bundled GitHub skills. For host mode,
@@ -316,7 +317,7 @@ deployments, and releases. The image installs `ripgrep` for this. The cache is
 local scratch space; the skill never pushes or mutates GitHub state.
 
 For Coralogix access, the container has `cx` installed and the image build
-installs the `cx-telemetry-querying` and `cx-incident-management` Hermes skills
+installs the `cx-telemetry-querying` and `cx-cases` Hermes skills
 into an image seed profile. Before each Hermes run, the wrapper refreshes
 image-managed skills in `HERMES_RUNTIME_HOME/.hermes/skills`, so image rebuilds
 roll out skill updates even when `./data` is bind-mounted.

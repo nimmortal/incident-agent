@@ -2,7 +2,7 @@ import type { Settings } from "./config.ts";
 
 export const incidentAgentSkill = "incident-agent" as const;
 export const companyContextSkill = "company-context" as const;
-export const coralogixSkills = ["cx-telemetry-querying", "cx-incident-management"] as const;
+export const coralogixSkills = ["cx-telemetry-querying", "cx-cases"] as const;
 export const githubSkillNames = ["github-auth", "github-repo-management", "github-pr-workflow", "github-issues"] as const;
 export const githubSkills = githubSkillNames.map((skill) => `github/${skill}`) as `github/${(typeof githubSkillNames)[number]}`[];
 export const githubCodeExplorationSkill = "github-code-exploration" as const;

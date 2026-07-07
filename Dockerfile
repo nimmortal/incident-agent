@@ -20,17 +20,20 @@ RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 COPY scripts/patch-hermes-copilot.py /tmp/patch-hermes-copilot.py
 RUN /usr/local/lib/hermes-agent/venv/bin/python /tmp/patch-hermes-copilot.py
 
-RUN mkdir -p /tmp/cx-skills "${HERMES_SKILLS_SEED_HOME}/.hermes/skills" \
-  && cd /tmp/cx-skills \
-  && npx -y skills add coralogix/cx-cli \
-    --agent github-copilot \
-    --skill cx-telemetry-querying \
-    --skill cx-incident-management \
-    --copy \
-    -y \
-  && cp -R .agents/skills/cx-telemetry-querying "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
-  && cp -R .agents/skills/cx-incident-management "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/" \
-  && rm -rf /tmp/cx-skills \
+RUN set -eux; \
+  mkdir -p /tmp/cx-skills "${HERMES_SKILLS_SEED_HOME}/.hermes/skills"; \
+  for skill in cx-telemetry-querying cx-cases; do \
+    mkdir -p "/tmp/cx-skills/${skill}"; \
+    cd "/tmp/cx-skills/${skill}"; \
+    npx -y skills add coralogix/cx-cli \
+      --agent github-copilot \
+      --skill "${skill}" \
+      --copy \
+      -y; \
+    test -d ".agents/skills/${skill}"; \
+    cp -R ".agents/skills/${skill}" "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/"; \
+  done; \
+  rm -rf /tmp/cx-skills \
   && mkdir -p "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github" \
   && cp -R /home/agent/.hermes/skills/github/github-auth "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/" \
   && cp -R /home/agent/.hermes/skills/github/github-issues "${HERMES_SKILLS_SEED_HOME}/.hermes/skills/github/" \
