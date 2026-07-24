@@ -1,4 +1,4 @@
-FROM node:24.9.0-slim@sha256:3e69116c924bfcba6c6979aff60d966c37aef56d488ce091c69d442ebec9f103
+FROM node:26.5.0-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583
 
 ENV HOME=/home/agent
 ENV PATH="/home/agent/.local/bin:${PATH}"
