@@ -1,9 +1,11 @@
 import { Command } from "commander";
 import { loadSettings, validateSettings, type Settings } from "./config.ts";
+import { parseTaggedStatus, type InvestigationArtifact, type StepStatus } from "./contracts.ts";
 import { requireFeatures, type FeatureId } from "./features.ts";
 import { buildHermesEnvironment } from "./hermes-config.ts";
 import { HermesRunError, HermesRunner, type HermesRunOptions } from "./hermes-runner.ts";
 import { createInvestigationJournal, type InvestigationJournal, type InvestigationPhase } from "./investigation-journal.ts";
+import { runPollCycle } from "./polling.ts";
 import {
   codeUnavailableBrief,
   freeformPrompt,
@@ -15,7 +17,6 @@ import {
   incidentTriagePrompt,
   jiraTicketPrompt,
   logsPrompt,
-  pollPrompt,
 } from "./prompts.ts";
 import { requireCopilotAuthUsable, requireCopilotTokenSupported, requireRuntimeForSkills } from "./runtime-preflight.ts";
 import { coralogixSkills, optionalGithubSkills, optionalSourceSkills, skillArgs, wrapperSkills } from "./skill-sets.ts";
@@ -60,6 +61,7 @@ async function main(): Promise<void> {
     const envOverrides = reasoningEffort ? { HERMES_REASONING_EFFORT: reasoningEffort } : undefined;
     let nextPrompt = prompt;
     let runOptions: HermesRunOptions = { streamOutput: options.stream, envOverrides };
+    let sessionId: string | undefined;
     const maxSteps = options.phaseMaxSteps ?? settings.investigationPhaseMaxSteps[phase];
     let lastOutput = "";
 
@@ -72,22 +74,26 @@ async function main(): Promise<void> {
         try {
           const output = await hermes.run(nextPrompt, skillArgs(runSkills), runOptions);
           lastOutput = output;
-          const status = parseStepStatus(output, "phase");
+          sessionId = hermes.lastSessionId() ?? sessionId;
+          const status = parseTaggedStatus(output, "phase");
           if (!status) {
             throw new StepStatusError("Hermes phase output did not include a valid <incident-agent-phase-status> block", output);
+          }
+          if (status.status !== "continue" && (!status.artifact || status.artifact.phase !== phase)) {
+            throw new StepStatusError(`Hermes ${phase} phase output did not include a matching typed artifact`, output);
           }
 
           journal.append({ type: "phase_step_completed", phase, output, status, step, attempt, recovery });
 
           if (status.status === "done") {
             journal.append({ type: "phase_completed", phase, output, step, attempt, recovery });
-            return { brief: output || "(phase completed without captured stdout)", status };
+            return { brief: phaseArtifactBrief(status.artifact, output), status };
           }
           if (status.status === "blocked") {
             const blocked = phaseBlockedResult(phase, status, output);
             journal.append({ type: "phase_blocked", phase, output: blocked, status, step, attempt, recovery });
             console.log(blocked);
-            return { brief: blocked, status };
+            return { brief: phaseArtifactBrief(status.artifact, blocked), status };
           }
 
           nextPrompt = phaseContinuationPrompt(
@@ -97,7 +103,10 @@ async function main(): Promise<void> {
             compactPromptContext(output, maxContinuationOutputChars),
             journal.readCompact(maxContinuationJournalChars),
           );
-          runOptions = { continueSession: true, streamOutput: options.stream, envOverrides };
+          if (!sessionId) {
+            throw new StepStatusError("Hermes did not report a session ID required for safe phase continuation", output);
+          }
+          runOptions = { resumeSessionId: sessionId, streamOutput: options.stream, envOverrides };
           break;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -115,22 +124,22 @@ async function main(): Promise<void> {
               message,
               compactPromptContext(partialOutput, maxContinuationOutputChars),
             );
-            runOptions = { continueSession: true, streamOutput: options.stream, envOverrides };
+            runOptions = { resumeSessionId: sessionId, streamOutput: options.stream, envOverrides };
             continue;
           }
 
           const fallback = phaseFallbackResult(phase, message, partialOutput);
-          journal.append({ type: "phase_fallback", phase, output: fallback, step });
-          console.log(fallback);
-          return { brief: fallback };
+          journal.append({ type: "phase_fallback", phase, output: fallback.brief, step });
+          console.log(fallback.brief);
+          return fallback;
         }
       }
     }
 
     const fallback = phaseFallbackResult(phase, `Phase reached max steps (${maxSteps}) before reporting done or blocked`, lastOutput);
-    journal.append({ type: "phase_fallback", phase, output: fallback, maxSteps });
-    console.log(fallback);
-    return { brief: fallback };
+    journal.append({ type: "phase_fallback", phase, output: fallback.brief, maxSteps });
+    console.log(fallback.brief);
+    return fallback;
   };
 
   const runPhasedInvestigation = async (issueKey: string, options: InvestigationRunOptions): Promise<void> => {
@@ -148,54 +157,58 @@ async function main(): Promise<void> {
     const journal = createInvestigationJournal(settings, issueKey);
     console.error(`[incident-agent] Investigation journal: ${journal.path}`);
 
-    const triageBrief = (await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options)).brief;
-    const codePhaseOutput = settings.features.sources.github.enabled
-      ? (await runInvestigationPhase("code", incidentCodePrompt(issueKey, settings, triageBrief, journal.path), journal, optionalGithubSkills(settings), options)).brief
-      : codePhaseUnavailable(settings);
-    const codeBrief = normalizeCodeBrief(codePhaseOutput);
-    let evidenceBrief = (
-      await runInvestigationPhase(
-        "evidence",
-        incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
-        journal,
-        skills,
-        options,
-      )
-    ).brief;
-    const synthesis = await runInvestigationPhase(
-      "synthesis",
-      incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path),
-      journal,
-      skills,
-      options,
-    );
-
-    const evidenceRequest = synthesis.status?.evidenceRequest?.trim();
-    if (!evidenceRequest) {
-      return;
-    }
-
-    console.error(`[incident-agent] Synthesis requested one targeted evidence re-entry: ${evidenceRequest}`);
-    evidenceBrief = (
-      await runInvestigationPhase(
-        "evidence",
-        targetedEvidencePrompt(
+    try {
+      const triageBrief = (await runInvestigationPhase("triage", incidentTriagePrompt(issueKey, settings), journal, [], options)).brief;
+      const codePhaseOutput = settings.features.sources.github.enabled
+        ? (await runInvestigationPhase("code", incidentCodePrompt(issueKey, settings, triageBrief, journal.path), journal, optionalGithubSkills(settings), options)).brief
+        : codePhaseUnavailable(settings);
+      const codeBrief = codePhaseOutput;
+      let evidenceBrief = (
+        await runInvestigationPhase(
+          "evidence",
           incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
-          evidenceRequest,
-          compactPromptContext(evidenceBrief, maxContinuationOutputChars),
-        ),
+          journal,
+          skills,
+          options,
+        )
+      ).brief;
+      let synthesis = await runInvestigationPhase(
+        "synthesis",
+        incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path),
         journal,
         skills,
         options,
-      )
-    ).brief;
-    await runInvestigationPhase(
-      "synthesis",
-      finalSynthesisPrompt(incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path)),
-      journal,
-      skills,
-      options,
-    );
+      );
+
+      const evidenceRequest = synthesis.status?.evidenceRequest?.trim();
+      if (evidenceRequest) {
+        console.error(`[incident-agent] Synthesis requested one targeted evidence re-entry: ${evidenceRequest}`);
+        evidenceBrief = (
+          await runInvestigationPhase(
+            "evidence",
+            targetedEvidencePrompt(
+              incidentEvidenceWithCodePrompt(issueKey, settings, triageBrief, codeBrief, journal.path),
+              evidenceRequest,
+              compactPromptContext(evidenceBrief, maxContinuationOutputChars),
+            ),
+            journal,
+            skills,
+            options,
+          )
+        ).brief;
+        synthesis = await runInvestigationPhase(
+          "synthesis",
+          finalSynthesisPrompt(incidentSynthesisWithCodePrompt(issueKey, settings, triageBrief, codeBrief, evidenceBrief, journal.path)),
+          journal,
+          skills,
+          options,
+        );
+      }
+      completeJournal(journal, synthesis);
+    } catch (error) {
+      journal.append({ type: "run_completed", status: "failed", summary: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   };
 
   const runGoal = async (objective: string, options: GoalRunOptions): Promise<void> => {
@@ -209,10 +222,12 @@ async function main(): Promise<void> {
 
     let previousStatus = "(none; this is the first goal step)";
     let runOptions = sessionOptions(options);
+    let sessionId = options.session;
 
     for (let step = 1; step <= options.maxSteps; step += 1) {
       console.error(`[incident-agent] Goal step ${step}/${options.maxSteps}`);
       const output = await hermes.run(goalPrompt(objective, settings, step, options.maxSteps, previousStatus), skillArgs(skills), runOptions);
+      sessionId = hermes.lastSessionId() ?? sessionId;
       const status = parseGoalStatus(output);
 
       if (!status) {
@@ -229,10 +244,10 @@ async function main(): Promise<void> {
         return;
       }
 
-      runOptions = {
-        continueSession: options.sessionName ?? true,
-        streamOutput: options.stream,
-      };
+      if (!sessionId) {
+        throw new Error("Hermes did not report a session ID required for safe goal continuation");
+      }
+      runOptions = { resumeSessionId: sessionId, streamOutput: options.stream };
     }
 
     console.error(`[incident-agent] Goal stopped after ${options.maxSteps} steps; increase --max-steps to continue`);
@@ -340,13 +355,15 @@ async function main(): Promise<void> {
   program
     .command("poll-once")
     .description("Run one Jira/JSM polling cycle through Hermes")
-    .addOption(sessionOption())
-    .addOption(continueSessionOption())
-    .addOption(sessionNameOption())
     .addOption(streamOption())
     .action(async (options: CliRunOptions) => {
-      const { settings } = await getRuntime();
-      return runPrompt(pollPrompt(settings), ["source:jira-jsm"], optionalSourceSkills(settings), options);
+      const { hermes, settings } = await getRuntime();
+      requireFeatures(settings.features, ["provider:copilot", "source:jira-jsm"]);
+      requireCopilotTokenSupported();
+      await requireCopilotAuthUsable();
+      const skills = wrapperSkills(optionalSourceSkills(settings));
+      requireRuntimeForSkills(settings, skills);
+      return runPollCycle(settings, hermes, skills, { streamOutput: options.stream });
     });
 
   program
@@ -408,11 +425,10 @@ function streamOption(): ReturnType<Command["createOption"]> {
 }
 
 function parsePositiveInt(value: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  if (!/^[1-9]\d*$/.test(value)) {
     throw new Error(`Expected a positive integer, got ${value}`);
   }
-  return parsed;
+  return Number(value);
 }
 
 function sessionOptions(options: CliRunOptions): HermesRunOptions {
@@ -477,65 +493,13 @@ function joinWords(values: string[]): string {
   return text;
 }
 
-type StepStatusValue = "continue" | "done" | "blocked";
-
-interface StepStatus {
-  status: StepStatusValue;
-  summary: string;
-  nextPrompt?: string;
-  blockedBy?: string;
-  evidenceRequest?: string;
-}
-
 interface PhaseResult {
   brief: string;
   status?: StepStatus;
 }
 
 function parseGoalStatus(output: string): StepStatus | undefined {
-  return parseStepStatus(output, "goal");
-}
-
-function parseStepStatus(output: string, scope: "goal" | "phase"): StepStatus | undefined {
-  const tag = scope === "goal" ? "incident-agent-goal-status" : "incident-agent-phase-status";
-  const pattern = new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*</${tag}>`, "g");
-  const matches = [...output.matchAll(pattern)];
-  const payload = matches.at(-1)?.[1]?.trim();
-  if (!payload) {
-    return undefined;
-  }
-
-  let parsed: Partial<StepStatus>;
-  try {
-    parsed = JSON.parse(stripJsonFence(payload)) as Partial<StepStatus>;
-  } catch {
-    return undefined;
-  }
-  if (!isStepStatusValue(parsed.status) || typeof parsed.summary !== "string" || !parsed.summary.trim()) {
-    return undefined;
-  }
-  if (parsed.status === "continue" && (typeof parsed.nextPrompt !== "string" || !parsed.nextPrompt.trim())) {
-    return undefined;
-  }
-  if (parsed.status === "blocked" && (typeof parsed.blockedBy !== "string" || !parsed.blockedBy.trim())) {
-    return undefined;
-  }
-
-  return {
-    status: parsed.status,
-    summary: parsed.summary,
-    nextPrompt: typeof parsed.nextPrompt === "string" ? parsed.nextPrompt : undefined,
-    blockedBy: typeof parsed.blockedBy === "string" ? parsed.blockedBy : undefined,
-    evidenceRequest: typeof parsed.evidenceRequest === "string" ? parsed.evidenceRequest : undefined,
-  };
-}
-
-function stripJsonFence(value: string): string {
-  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-}
-
-function isStepStatusValue(value: unknown): value is StepStatusValue {
-  return value === "continue" || value === "done" || value === "blocked";
+  return parseTaggedStatus(output, "goal");
 }
 
 class StepStatusError extends Error {
@@ -581,7 +545,7 @@ function phaseStatusInstructions(phase: InvestigationPhase): string {
     "End your response with exactly one status block in this format:",
     "",
     "<incident-agent-phase-status>",
-    `{"status":"done","summary":"What changed in this ${phase} step."}`,
+    `{"status":"done","summary":"What changed in this ${phase} step.","artifact":{"phase":"${phase}","summary":"One-sentence phase result.","confidence":"low","identifiers":[],"facts":[],"blockers":[],"nextChecks":[]}}`,
     "</incident-agent-phase-status>",
     "",
     "Status rules:",
@@ -590,6 +554,7 @@ function phaseStatusInstructions(phase: InvestigationPhase): string {
     "- Use \"continue\" when another bounded read-only check is available and likely to improve this phase output.",
     "- For \"blocked\", include \"blockedBy\" with the concrete blocker and exact next input or source needed.",
     "- For \"continue\", include \"nextPrompt\" with one specific next investigation action for this same phase.",
+    "- For \"done\" or \"blocked\", include the typed artifact and use empty arrays rather than omitting fields.",
   ].join("\n");
 }
 
@@ -632,17 +597,17 @@ function finalSynthesisPrompt(baseSynthesisPrompt: string): string {
 
 function codePhaseUnavailable(settings: Settings): string {
   const missing = settings.features.sources.github.missingEnv.join(", ") || "GitHub source disabled";
-  return codeUnavailableBrief(`GitHub code source is not configured (${missing}).`, "");
-}
-
-function normalizeCodeBrief(output: string): string {
-  if (output.startsWith("Blocked phase: code")) {
-    return codeUnavailableBrief("Code grounding phase was blocked.", output);
-  }
-  if (output.startsWith("Recovered phase: code")) {
-    return codeUnavailableBrief("Code grounding phase fell back before producing a structured code brief.", output);
-  }
-  return output;
+  const reason = `GitHub code source is not configured (${missing}).`;
+  const artifact: InvestigationArtifact = {
+    phase: "code",
+    summary: reason,
+    confidence: "low",
+    identifiers: [],
+    facts: [],
+    blockers: [reason],
+    nextChecks: ["Configure the GitHub source, then rerun code grounding."],
+  };
+  return phaseArtifactBrief(artifact, codeUnavailableBrief(reason, ""));
 }
 
 function phaseBlockedResult(phase: InvestigationPhase, status: StepStatus, output: string): string {
@@ -663,8 +628,18 @@ function phaseBlockedResult(phase: InvestigationPhase, status: StepStatus, outpu
   ].join("\n");
 }
 
-function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOutput: string): string {
-  return [
+function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOutput: string): PhaseResult {
+  const artifact: InvestigationArtifact = {
+    phase,
+    summary: `${phase} phase ended without a valid completion contract`,
+    confidence: "low",
+    identifiers: [],
+    facts: [],
+    blockers: [error],
+    nextChecks: ["Retry this phase after resolving the recorded blocker."],
+  };
+  const status: StepStatus = { status: "blocked", summary: artifact.summary, blockedBy: error, artifact };
+  const narrative = [
     `Recovered phase: ${phase}`,
     "",
     "Usable findings:",
@@ -682,6 +657,8 @@ function phaseFallbackResult(phase: InvestigationPhase, error: string, partialOu
     "Exact next step:",
     "Continue with available context and produce an incomplete-investigation note if confidence remains low.",
   ].join("\n");
+  const machineStatus = ["<incident-agent-phase-status>", JSON.stringify(status), "</incident-agent-phase-status>"].join("\n");
+  return { brief: phaseArtifactBrief(artifact, `${narrative}\n\n${machineStatus}`), status };
 }
 
 function recoveryOutput(error: HermesRunError): string {
@@ -691,6 +668,18 @@ function recoveryOutput(error: HermesRunError): string {
     return output;
   }
   return [output, "Output tail:", tail].filter(Boolean).join("\n\n");
+}
+
+function phaseArtifactBrief(artifact: InvestigationArtifact | undefined, narrative: string): string {
+  if (!artifact) {
+    return narrative || "(phase completed without captured stdout)";
+  }
+  return ["Typed phase artifact:", JSON.stringify(artifact), "", "Phase narrative:", narrative].join("\n");
+}
+
+function completeJournal(journal: InvestigationJournal, result: PhaseResult): void {
+  const status = result.status?.status === "blocked" ? "blocked" : result.status?.status === "done" ? "done" : "failed";
+  journal.append({ type: "run_completed", status, summary: result.status?.summary ?? "Investigation ended without a typed final status" });
 }
 
 main().catch((error: unknown) => {

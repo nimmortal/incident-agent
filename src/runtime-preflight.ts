@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import type { Settings } from "./config.ts";
 import { hasHermesSkill, runtimeSkillsPath } from "./hermes-config.ts";
-import { coralogixSkills, githubCodeExplorationSkill, githubSkillNames, postgresSkills, skillName } from "./skill-sets.ts";
+import { coralogixSkills, githubCodeExplorationSkill, postgresSkills } from "./skill-sets.ts";
 
 const copilotTokenEnvVar = "COPILOT_GITHUB_TOKEN" as const;
 
@@ -135,9 +135,7 @@ function copilotTokenKind(value: string): CopilotTokenKind {
 export function requireRuntimeForSkills(settings: Settings, skills: string[]): void {
   const missing: string[] = [];
 
-  const needsGithubCli =
-    skills.some((skill) => githubSkillNames.includes(skillName(skill) as (typeof githubSkillNames)[number])) ||
-    skills.includes(githubCodeExplorationSkill);
+  const needsGithubCli = skills.includes(githubCodeExplorationSkill);
   if (needsGithubCli && !commandExists("gh")) {
     missing.push("gh CLI");
   }

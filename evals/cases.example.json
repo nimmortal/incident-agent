@@ -1,0 +1,9 @@
+[
+  {
+    "id": "resolved-incident-example",
+    "issueKey": "JSM-123",
+    "expectedIdentifiers": ["expected-stable-identifier"],
+    "claimPatterns": ["expected root cause pattern"],
+    "minimumConfidence": "medium"
+  }
+]

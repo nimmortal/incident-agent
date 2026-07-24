@@ -40,7 +40,7 @@ For each scout in the scout plan, include:
 End your response with exactly one status block in this format:
 
 <incident-agent-phase-status>
-{"status":"done","summary":"Triage brief produced with timeline anchors, identifiers, and scout plan."}
+{"status":"done","summary":"Triage brief produced with timeline anchors, identifiers, and scout plan.","artifact":{"phase":"triage","summary":"One-sentence triage result.","confidence":"medium","identifiers":["JSM-123"],"facts":[{"claim":"Concrete ticket fact.","source":"Jira/JSM","locator":"field, comment, or timestamp","confidence":"medium"}],"blockers":[],"nextChecks":["One bounded next check."]}}
 </incident-agent-phase-status>
 
 Status rules:
@@ -49,3 +49,4 @@ Status rules:
 - Use "continue" when another bounded Jira/JSM read-only check is available and likely to improve the triage brief.
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
 - For "continue", include "nextPrompt" with one specific next triage action.
+- For "done" or "blocked", include the typed `artifact`; preserve concrete identifiers and facts, and use empty arrays rather than omitting fields.

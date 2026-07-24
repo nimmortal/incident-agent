@@ -30,7 +30,7 @@ Return a compact recovery brief with these headings:
 End your response with exactly one status block in this format:
 
 <incident-agent-phase-status>
-{"status":"done","summary":"Recovered a usable phase result from the journal and partial output."}
+{"status":"done","summary":"Recovered a usable phase result from the journal and partial output.","artifact":{"phase":"{{phase}}","summary":"One-sentence recovered result.","confidence":"low","identifiers":[],"facts":[],"blockers":[],"nextChecks":["Exact next bounded check."]}}
 </incident-agent-phase-status>
 
 Status rules:
@@ -39,3 +39,4 @@ Status rules:
 - Use "continue" only when one bounded read-only recovery check is still available and likely to produce a usable phase result.
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
 - For "continue", include "nextPrompt" with one specific recovery action.
+- For "done" or "blocked", include the typed `artifact` and use empty arrays rather than omitting fields.

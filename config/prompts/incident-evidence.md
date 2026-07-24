@@ -53,7 +53,7 @@ Use the same join-key names across ledger entries so synthesis can compare sourc
 End your response with exactly one status block in this format:
 
 <incident-agent-phase-status>
-{"status":"done","summary":"Evidence brief produced with scouts, ledger, timeline, suspected root cause, and confidence."}
+{"status":"done","summary":"Evidence brief produced with scouts, ledger, timeline, suspected root cause, and confidence.","artifact":{"phase":"evidence","summary":"One-sentence evidence result.","confidence":"medium","identifiers":["trace/request/ticket identifier"],"facts":[{"claim":"Evidence-led claim.","source":"runtime or state source","locator":"query, timestamp, trace, or schema.table","confidence":"medium"}],"blockers":[],"nextChecks":[]}}
 </incident-agent-phase-status>
 
 Status rules:
@@ -62,3 +62,4 @@ Status rules:
 - Use "continue" when another bounded read-only scout or source check is available and likely to improve the evidence brief.
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
 - For "continue", include "nextPrompt" with one specific next evidence-gathering action.
+- For "done" or "blocked", include the typed `artifact`; map ledger evidence into facts and use empty arrays rather than omitting fields.

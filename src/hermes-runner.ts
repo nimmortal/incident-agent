@@ -6,6 +6,8 @@ const outputTailLimit = 8_000;
 const capturedOutputLimit = 64_000;
 
 export class HermesRunner {
+  private latestSessionId?: string;
+
   constructor(
     private readonly binary: string,
     private readonly args: string[],
@@ -18,6 +20,7 @@ export class HermesRunner {
 
   run(prompt: string, extraArgs: string[] = [], options: HermesRunOptions = {}): Promise<string> {
     return new Promise((resolve, reject) => {
+      this.latestSessionId = undefined;
       const baseArgs = withoutQueryFlag(options.streamOutput ? withoutQuietFlag(this.args) : this.args);
       const args = [...baseArgs, ...extraArgs, ...sessionArgs(options), "-q", prompt];
       console.error(`[incident-agent] Starting Hermes: ${displayCommand(this.binary, args)}`);
@@ -26,10 +29,13 @@ export class HermesRunner {
       let settled = false;
       let stopReason: HermesStopReason | undefined;
       let forceKillTimer: NodeJS.Timeout | undefined;
+      let interruptedSignal: NodeJS.Signals | undefined;
+      let observedSessionId: string | undefined;
 
       const child = spawn(this.binary, args, {
         env: options.envOverrides ? { ...this.env, ...options.envOverrides } : this.env,
         stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
       });
 
       let outputTail = "";
@@ -41,6 +47,8 @@ export class HermesRunner {
         if (forceKillTimer) {
           clearTimeout(forceKillTimer);
         }
+        process.off("SIGINT", interruptSigint);
+        process.off("SIGTERM", interruptSigterm);
       };
       const rejectRun = (error: Error): void => {
         if (settled) {
@@ -56,6 +64,7 @@ export class HermesRunner {
         }
         settled = true;
         stopTimers();
+        this.latestSessionId = observedSessionId ?? parseHermesSessionId([output, outputTail].join("\n"));
         resolve(output);
       };
       const observeOutput = (): void => {
@@ -81,23 +90,34 @@ export class HermesRunner {
         }
         stopReason = reason;
         console.error(`[incident-agent] ${message}; stopping child process`);
-        child.kill("SIGTERM");
+        killChildTree(child.pid, "SIGTERM");
         forceKillTimer = setTimeout(() => {
-          child.kill("SIGKILL");
+          killChildTree(child.pid, "SIGKILL");
         }, this.terminateGraceSeconds * 1000);
       };
+
+      const interrupt = (signal: NodeJS.Signals): void => {
+        interruptedSignal = signal;
+        stopChild("interrupted", `Received ${signal}`);
+      };
+      const interruptSigint = (): void => interrupt("SIGINT");
+      const interruptSigterm = (): void => interrupt("SIGTERM");
+      process.once("SIGINT", interruptSigint);
+      process.once("SIGTERM", interruptSigterm);
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
       child.stdout.on("data", (chunk) => {
         observeOutput();
         process.stdout.write(chunk);
+        observedSessionId = observedSessionId ?? parseHermesSessionId(outputTail + chunk);
         outputTail = appendOutputTail(outputTail, chunk);
         capturedOutput = appendCapturedOutput(capturedOutput, chunk);
       });
       child.stderr.on("data", (chunk) => {
         observeOutput();
         process.stderr.write(chunk);
+        observedSessionId = observedSessionId ?? parseHermesSessionId(outputTail + chunk);
         outputTail = appendOutputTail(outputTail, chunk);
       });
       child.on("error", (error) => {
@@ -108,11 +128,15 @@ export class HermesRunner {
           return;
         }
         if (stopReason) {
-          const reasonText = stopReason === "idle-timeout" ? `Hermes exceeded idle timeout of ${this.idleTimeoutSeconds} seconds` : `Hermes exceeded max runtime of ${this.maxRuntimeSeconds} seconds`;
+          const reasonText = stopReason === "idle-timeout"
+            ? `Hermes exceeded idle timeout of ${this.idleTimeoutSeconds} seconds`
+            : stopReason === "max-runtime"
+              ? `Hermes exceeded max runtime of ${this.maxRuntimeSeconds} seconds`
+              : `Hermes was interrupted by ${interruptedSignal ?? "signal"}`;
           rejectRun(
             new HermesRunError(reasonText, {
               reason: stopReason,
-              timedOut: true,
+              timedOut: stopReason !== "interrupted",
               output: capturedOutput.trim(),
               outputTail,
             }),
@@ -138,6 +162,10 @@ export class HermesRunner {
         resolveRun(capturedOutput.trim());
       });
     });
+  }
+
+  lastSessionId(): string | undefined {
+    return this.latestSessionId;
   }
 
   runInteractive(args: string[]): Promise<void> {
@@ -186,7 +214,7 @@ export class HermesRunError extends Error {
 }
 
 export type HermesRunErrorReason = HermesStopReason | "nonzero-exit";
-type HermesStopReason = "max-runtime" | "idle-timeout";
+type HermesStopReason = "max-runtime" | "idle-timeout" | "interrupted";
 
 interface HermesRunErrorOptions {
   exitCode?: number;
@@ -273,4 +301,25 @@ function displayCommand(binary: string, args: string[]): string {
 
 function shellish(value: string): string {
   return /^[A-Za-z0-9_./:=,@+-]+$/.test(value) ? value : JSON.stringify(value);
+}
+
+export function parseHermesSessionId(output: string): string | undefined {
+  const patterns = [
+    /^\s*Session:\s*([A-Za-z0-9._:-]+)\s*$/im,
+    /\bhermes(?:\s+chat)?\s+--resume\s+([A-Za-z0-9._:-]+)/i,
+  ];
+  return patterns.map((pattern) => output.match(pattern)?.[1]).find(Boolean);
+}
+
+function killChildTree(pid: number | undefined, signal: NodeJS.Signals): void {
+  if (!pid) {
+    return;
+  }
+  try {
+    process.kill(process.platform === "win32" ? pid : -pid, signal);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") {
+      throw error;
+    }
+  }
 }

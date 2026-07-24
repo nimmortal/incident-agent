@@ -185,11 +185,13 @@ export function incidentPhaseRecoveryPrompt(
   });
 }
 
-export function pollPrompt(settings: Settings): string {
+export function pollPrompt(settings: Settings, pollState: string): string {
   return renderPrompt(settings, "poll", {
     featureContext: featureContext(settings),
     jiraPollBatchSize: settings.jiraPollBatchSize,
+    jiraPollCandidateBatchSize: settings.jiraPollCandidateBatchSize,
     jiraJql: settings.jiraJql,
+    pollState,
     investigatedLabel: settings.investigatedLabel,
     investigatingLabel: settings.investigatingLabel,
     failedLabel: settings.failedLabel,

@@ -30,6 +30,7 @@ mcp_servers:
     enabled: true
     timeout: 120
     tools:
+      include: []
       resources: false
       prompts: false
   context7:

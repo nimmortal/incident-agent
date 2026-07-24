@@ -5,12 +5,12 @@ Local PoC for a Hermes-based incident investigation agent.
 The first version is intentionally simple:
 
 - exposes a small CLI for ad-hoc investigation commands
-- uses Hermes cron and gateway to poll Jira/JSM through MCP
+- runs a wrapper-owned supervised Jira/JSM polling loop with durable local checkpoints and backoff
 - delegates read-only Jira, GitHub, Context7 docs, Coralogix, and Postgres investigation to Hermes tools and CLIs
 - runs end-to-end ticket investigation in triage, code grounding, evidence, and synthesis phases
 - runs bounded goal loops for autonomous multi-step investigation
 - writes compact investigation journals under `./data/investigations`
-- keeps the wrapper limited to scheduling and prompt template rendering
+- keeps source-specific API behavior in Hermes tools while the wrapper owns safety, orchestration, state, recovery, and typed contracts
 - returns conclusions in chat only; it must not write Jira comments, labels, statuses, or other external state
 
 ## Setup
@@ -32,8 +32,32 @@ The first version is intentionally simple:
 4. Run a local sanity check:
 
    ```bash
-   docker compose run --rm incident-agent npm run doctor
+   docker compose run --rm incident-agent npm run doctor -- --strict
    ```
+
+## Safety Boundaries
+
+Read-only behavior is enforced in layers, not only requested in prompts:
+
+- Jira MCP exposes only names in `JIRA_MCP_READONLY_TOOLS` through Hermes'
+  `tools.include` filter.
+- Hermes-launched `gh`, `git`, and `psql` resolve to wrapper allowlists that
+  block remote and database mutations; `cx` is forced into its native
+  `--read-only` mode even when a generated command omits that flag.
+- `GITHUB_TOKEN` is removed from the child environment after an ephemeral,
+  private `gh` configuration is created.
+- Postgres still requires a database role that is read-only at the server; the
+  wrapper and `PGOPTIONS` are defense in depth, not a substitute for privileges.
+- Docker Compose runs the image as a non-root user with a read-only root
+  filesystem, all Linux capabilities dropped, `no-new-privileges`, a PID limit,
+  and only `/app/data` plus private `/tmp` writable.
+- Ticket text, comments, logs, repository content, documentation, and database
+  values are treated as untrusted evidence and never as agent instructions.
+
+The Docker build pins the Node image digest, Hermes release and installer
+checksum, Coralogix binary checksums, skills CLI version, and Coralogix skill
+repository commit. Update those pins deliberately and verify the full image
+before publishing.
 
 ## Running With Docker Compose
 
@@ -67,7 +91,7 @@ docker compose run --rm -p 127.0.0.1:9119:9119 incident-agent \
   npm run dashboard -- --host 0.0.0.0 --no-open
 ```
 
-Start periodic polling through Hermes cron and gateway:
+Start supervised periodic polling:
 
 ```bash
 docker compose up incident-agent
@@ -142,7 +166,7 @@ docker run --rm \
   npm run agent -- poll-once
 ```
 
-Start periodic polling through Hermes cron and gateway:
+Start supervised periodic polling:
 
 ```bash
 docker run --rm \
@@ -202,9 +226,11 @@ for skill in cx-telemetry-querying cx-cases; do
 done
 ```
 
-The Docker image already includes Hermes' bundled GitHub skills. For host mode,
-verify that `npm run doctor` reports all expected seed skills as `found` before
-using GitHub, Coralogix, or Postgres commands.
+The Docker image installs only the pinned Coralogix read skills. GitHub code
+inspection uses the repository-local `github-code-exploration` skill and
+read-only command wrappers; mutation-oriented bundled GitHub skills are not
+loaded. For host mode, verify that `npm run doctor` reports every enabled
+source's required skill as `found`.
 
 For Copilot-only prompt tests that do not need source skills:
 
@@ -277,18 +303,24 @@ Required only for Jira/JSM commands:
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
 - `JIRA_MCP_AUTH_SCHEME`: auth scheme for the Jira/JSM MCP endpoint. Defaults to `Bearer`; use `Basic` when `JIRA_MCP_TOKEN` is `base64(email:api-token)`.
 - `JIRA_MCP_TOKEN`: token for the Jira/JSM MCP endpoint.
+- `JIRA_MCP_READONLY_TOOLS`: explicit comma-separated allowlist of original MCP
+  tool names that only read Jira/JSM. The wrapper rejects mutation-looking names
+  and renders this list into Hermes' `tools.include` policy.
 
 For a personal Atlassian API token encoded as `base64(email:api-token)`, use:
 
 ```env
 JIRA_MCP_AUTH_SCHEME=Basic
 JIRA_MCP_TOKEN=<base64-email-colon-api-token>
+JIRA_MCP_READONLY_TOOLS=get_issue,search_issues,get_comments
 ```
 
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
-- `GITHUB_TOKEN`: read-only token available to `gh` inside the container.
+- `GITHUB_TOKEN`: least-privilege token used by an ephemeral `gh` configuration.
+  Hermes-launched `gh` and `git` commands pass through read-only-remote
+  allowlists; still grant only repository read permissions.
 - `CONTEXT7_MCP_URL`: Context7 remote MCP endpoint. Defaults to `https://mcp.context7.com/mcp`.
 - `CONTEXT7_API_KEY`: optional Context7 API key for higher rate limits or private documentation.
 - `CX_API_KEY`: Coralogix API key available to `cx` inside the container.
@@ -298,15 +330,13 @@ use the corresponding source:
 - `POSTGRES_LOCK_TIMEOUT_MS`: lock wait timeout applied to every `psql` connection through `PGOPTIONS`. Defaults to `1000`.
 - `POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS`: idle transaction timeout applied to every `psql` connection through `PGOPTIONS`. Defaults to `5000`.
 
-For GitHub CLI access, the container has `gh` installed and the image build
-seeds Hermes' bundled GitHub skills for auth, issues, PR workflow, and
-repository management. Those skills prefer `gh` and fall back to lower-level
-GitHub access where appropriate. Provide `GITHUB_TOKEN` in `.env.local`; Hermes
-can then call `gh` without relying on an interactive login session. Hermes
-strips `GITHUB_TOKEN` from terminal subprocesses as a tool secret, so the
-wrapper also writes a `gh` hosts file under `HERMES_RUNTIME_HOME` and sets
-`GH_CONFIG_DIR` for Hermes. This lets Hermes use `gh` without exposing the token
-as a terminal environment variable.
+For GitHub CLI access, the container has `gh` installed. Provide a fine-grained,
+read-only `GITHUB_TOKEN` in `.env.local`. Before launching Hermes, the wrapper
+writes a private temporary `gh` configuration, removes `GITHUB_TOKEN` from the
+child environment, and deletes the temporary configuration on exit. It also
+places allowlisted `gh` and `git` wrappers first on `PATH`; remote writes such as
+PR merge, issue mutation, commit, tag creation, and push are blocked even if a
+broader token is configured accidentally.
 
 For code reading, the repository-local `github-code-exploration` skill tells
 Hermes to shallow-clone repositories into a persistent cache (`REPO_CACHE_DIR`,
@@ -422,7 +452,9 @@ Command behavior:
 - `investigate`: requires GitHub Copilot and Jira/JSM. It runs triage, code grounding, evidence, and synthesis phases, writes a compact JSONL journal, and uses GitHub, Context7, Coralogix, and Postgres as optional read-only investigation context. Each phase uses the same `continue`, `done`, or `blocked` progress contract as goal mode.
 - `poll-once`: requires GitHub Copilot and Jira/JSM. It reads matching tickets and returns chat-only conclusions; GitHub, Context7, Coralogix, and Postgres are optional read-only investigation context.
 - `ui`: requires GitHub Copilot. Source tools are optional and preloaded when their environment is configured.
-- `poll`: ensures the managed Hermes cron job `incident-agent-jira-poll` matches current env/config, then runs `hermes gateway run`.
+- `poll`: runs the same supervised Hermes executor as `poll-once`, persists ticket
+  checkpoints in `POLL_STATE_PATH`, skips unchanged ticket revisions, and backs
+  off after failures without overlapping cycles.
 
 `HERMES_ARGS` defaults to `chat --quiet -q`. Hermes `--quiet` is for
 programmatic use: it suppresses the banner, spinner, and tool previews while
@@ -560,9 +592,8 @@ HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE=false
 Subagents run with fresh context and return compact findings to the parent.
 They are instructed to stay read-only, avoid Jira/comment/label writes, avoid
 file changes, never wait for human approval, and report partial evidence when
-blocked. Keep `HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE=false` for unattended
-runs; changing it to `true` allows delegated workers to approve dangerous shell
-commands without a human in the loop.
+blocked. `HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE` is hard-disabled; the wrapper
+refuses to start if it is set to a truthy value.
 
 For expensive evidence gathering, treat the main Hermes agent as the incident
 orchestrator, not the place where every raw result should accumulate. Broad log
@@ -602,10 +633,11 @@ whether the phase should continue, advance, or stop as blocked. This gives
 `investigate` the same progress semantics as goal mode while preserving the
 fixed triage -> code -> evidence -> synthesis workflow.
 
-Each phase writes a JSONL event stream to
+Each phase writes a private, redacted JSONL event stream to
 `INVESTIGATION_JOURNAL_DIR/<issue-key>/<run-id>.jsonl`, defaulting to
-`data/investigations`. The journal is for recovery and audit, not for storing
-large raw logs.
+`data/investigations`. Files are created as `0600`, old journals expire after
+`INVESTIGATION_JOURNAL_RETENTION_DAYS`, and a terminal `run_completed` event
+records the outcome. The journal is for recovery and audit, not raw log storage.
 
 ## Features
 
@@ -614,24 +646,40 @@ The local wrapper treats capabilities as provider/source modules:
 - Provider: GitHub Copilot is mandatory for every Hermes run.
 - Model: Hermes is pinned to `gpt-5.4` through `config/hermes.config.yaml`.
 - Source: Jira/JSM provides read-only tickets through MCP.
-- Source: GitHub provides code, deployments, PRs, commits, and workflow runs through `gh`, bundled GitHub skills, and the repository-local `github-code-exploration` clone-cache skill.
+- Source: GitHub provides read-only code, deployment, PR, commit, and workflow inspection through allowlisted `gh`/`git` commands and the repository-local `github-code-exploration` clone-cache skill.
 - Source: Context7 provides current technology documentation through MCP.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
 - Source: Postgres provides read-only database evidence through `psql` and a repository-local skill.
 
-Run `npm run doctor` to see which modules are enabled. Missing optional sources
+Run `npm run doctor` to see which modules are enabled. Use
+`npm run doctor -- --strict` for local readiness and `npm run doctor:strict`
+for live semantic
+source probes. Strict mode exits non-zero when the mandatory provider, Hermes,
+required skills/binaries, or an enabled source probe fails. Jira verification
+performs MCP initialization plus `tools/list` and confirms every allowlisted
+tool is actually exposed. Missing optional sources
 do not prevent the wrapper from starting, but commands that need a missing source
-fail before starting Hermes. Use `npm run doctor -- --verify-sources` for
-opt-in live probes of configured sources. The live probes intentionally stay
-conservative: Copilot validates the configured token against the Copilot token
-exchange, GitHub checks `gh auth status`, Postgres runs a read-only
-`SELECT now()`, Jira MCP checks endpoint reachability/auth status, and Coralogix
-is left unprobed until a safe account-specific read query is configured.
+fail before starting Hermes. The live probes intentionally stay conservative:
+Copilot validates the configured token against the Copilot token exchange,
+GitHub checks `gh auth status`, Postgres runs a read-only `SELECT now()`, Jira
+MCP performs the protocol initialization and tool-list handshake, and Coralogix
+runs a bounded five-minute read-only log query.
 
 The `investigate` and `goal` commands also run the Copilot token-exchange
 probe before starting, so bad Copilot credentials fail fast instead of
 degrading a multi-phase investigation into low-confidence fallback briefs
 mid-run. Network problems reaching the exchange endpoint only log a warning.
+
+Quality regression cases use the real investigation path and typed synthesis
+artifact:
+
+```bash
+npm run evaluate -- evals/cases.json
+```
+
+Start with `evals/cases.example.json`. Keep only non-sensitive expectations in
+the repository; private reports are written under `data/evaluations` with
+duration, exit status, final status, confidence, and missing evidence checks.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
 `HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
@@ -641,18 +689,23 @@ repository-local Hermes skills, preloads the `incident-agent` and
 `company-context` skills, and checks required CLI binaries plus preloaded skills
 before starting Hermes.
 
-Periodic polling uses Hermes' native cron scheduler. `npm run poll` creates or
-updates the managed `incident-agent-jira-poll` job using
-`JIRA_POLL_INTERVAL_SECONDS`, removes duplicate managed jobs, and then starts
-the Hermes gateway in the foreground so due cron jobs fire.
+Periodic polling is wrapper-owned. `npm run poll` executes one supervised cycle,
+waits `JIRA_POLL_INTERVAL_SECONDS`, and repeats. It reads up to
+`JIRA_POLL_CANDIDATE_BATCH_SIZE` tickets, investigates at most
+`JIRA_POLL_BATCH_SIZE` new or changed revisions, persists exact Jira `updated`
+timestamps in `POLL_STATE_PATH`, and exponentially backs off up to
+`JIRA_POLL_MAX_BACKOFF_SECONDS`. Every cycle uses the same max-runtime, idle,
+heartbeat, process-tree termination, and output validation as one-off commands.
+An atomic local lease prevents overlapping poll cycles. Failed or blocked
+investigations are not checkpointed, so they remain eligible for retry; failed
+cycles also enter exponential backoff.
 
 ## Investigation State
 
-The current workflow is read-only. Polling reads matching Jira/JSM tickets and
-prints chat summaries; it does not claim tickets, add labels, write comments, or
-record completion state in Jira/JSM. If production needs durable investigation
-state later, add an explicit storage mechanism and keep it separate from the
-read-only prompt contract.
+The workflow is read-only with respect to external systems. Polling never claims
+tickets, adds labels, writes comments, or changes Jira/JSM state. Local durable
+state in `POLL_STATE_PATH` prevents repeated work on unchanged ticket revisions;
+deleting that file intentionally replays the candidate set.
 
 ## Comment Visibility
 

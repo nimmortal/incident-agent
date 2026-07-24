@@ -1,7 +1,9 @@
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
+import { redactSensitiveText } from "./security.ts";
 
 const maxPromptEntryChars = 48_000;
 
@@ -20,14 +22,19 @@ export type InvestigationJournalEvent =
   | { type: "phase_completed"; phase: InvestigationPhase; output: string; step?: number; attempt: number; recovery: boolean }
   | { type: "phase_blocked"; phase: InvestigationPhase; output: string; status: unknown; step: number; attempt: number; recovery: boolean }
   | { type: "phase_failed"; phase: InvestigationPhase; error: string; step?: number; attempt: number; recovery: boolean; partialOutput?: string }
-  | { type: "phase_fallback"; phase: InvestigationPhase; output: string; step?: number; maxSteps?: number };
+  | { type: "phase_fallback"; phase: InvestigationPhase; output: string; step?: number; maxSteps?: number }
+  | { type: "run_completed"; status: "done" | "blocked" | "failed"; summary: string };
 
 export type InvestigationPhase = "triage" | "code" | "evidence" | "synthesis";
 
 export function createInvestigationJournal(settings: Settings, issueKey: string): InvestigationJournal {
-  const runId = timestampId(new Date());
-  const dir = resolve(settings.investigationJournalDir, sanitizePathPart(issueKey));
-  mkdirSync(dir, { recursive: true });
+  const runId = `${timestampId(new Date())}-${randomUUID().slice(0, 8)}`;
+  const rootDir = resolve(settings.investigationJournalDir);
+  pruneExpiredJournals(rootDir, settings.investigationJournalRetentionDays);
+  const dir = resolve(rootDir, sanitizePathPart(issueKey));
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(rootDir, 0o700);
+  chmodSync(dir, 0o700);
 
   const path = join(dir, `${runId}.jsonl`);
   const journal: InvestigationJournal = {
@@ -35,7 +42,9 @@ export function createInvestigationJournal(settings: Settings, issueKey: string)
     runId,
     path,
     append(event) {
-      appendFileSync(path, JSON.stringify({ timestamp: new Date().toISOString(), issueKey, runId, ...compactEvent(event) }) + "\n");
+      const serialized = JSON.stringify({ timestamp: new Date().toISOString(), issueKey, runId, ...compactEvent(event) });
+      appendFileSync(path, redactSensitiveText(serialized) + "\n", { mode: 0o600 });
+      chmodSync(path, 0o600);
     },
     readCompact(maxChars = 48_000) {
       const contents = readFileSync(path, "utf8");
@@ -48,6 +57,32 @@ export function createInvestigationJournal(settings: Settings, issueKey: string)
 
   journal.append({ type: "run_started", command: "investigate" });
   return journal;
+}
+
+function pruneExpiredJournals(rootDir: string, retentionDays: number): void {
+  if (retentionDays === 0) {
+    return;
+  }
+  const cutoff = Date.now() - retentionDays * 86_400_000;
+  for (const path of walkFiles(rootDir)) {
+    if (path.endsWith(".jsonl") && statSync(path).mtimeMs < cutoff) {
+      rmSync(path, { force: true });
+    }
+  }
+}
+
+function walkFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      return entry.isDirectory() ? walkFiles(path) : [path];
+    });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
 }
 
 function compactEvent(event: InvestigationJournalEvent): InvestigationJournalEvent {

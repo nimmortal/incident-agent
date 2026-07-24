@@ -40,7 +40,7 @@ Use this confidence rubric:
 End your response with exactly one status block in this format:
 
 <incident-agent-phase-status>
-{"status":"done","summary":"Chat-only possible-reason conclusion produced."}
+{"status":"done","summary":"Chat-only possible-reason conclusion produced.","artifact":{"phase":"synthesis","summary":"One-sentence final conclusion.","confidence":"medium","identifiers":["strongest evidence identifier"],"facts":[{"claim":"Root-cause claim.","source":"aligned evidence","locator":"strongest concrete locator","confidence":"medium"}],"blockers":[],"nextChecks":[]}}
 </incident-agent-phase-status>
 
 Status rules:
@@ -50,3 +50,4 @@ Status rules:
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
 - For "continue", include "nextPrompt" with one specific next synthesis action.
 - If exactly one evidence gap that only the evidence phase can fill (a scout-scale log, code, docs, or state deep dive) would materially change root-cause confidence, add "evidenceRequest" with one specific bounded request to the final "done" or "blocked" status. The wrapper will re-run the evidence phase once with that request and then re-run synthesis. Use it at most once and only for a check you could not perform in this phase.
+- For "done" or "blocked", include the typed `artifact`; it is the durable machine-readable result, so use empty arrays rather than omitting fields.

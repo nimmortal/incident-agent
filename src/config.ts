@@ -25,12 +25,16 @@ const settingsSchema = z.object({
   jiraJql: z.string().min(1),
   jiraPollIntervalSeconds: z.number().int().positive(),
   jiraPollBatchSize: z.number().int().positive(),
+  jiraPollCandidateBatchSize: z.number().int().positive(),
+  jiraPollMaxBackoffSeconds: z.number().int().positive(),
   hermesBin: z.string().min(1),
   hermesArgs: z.array(z.string().min(1)),
   hermesConfigTemplatePath: z.string().min(1),
   promptTemplatesDir: z.string().min(1),
   hermesRuntimeHome: z.string().min(1),
   investigationJournalDir: z.string().min(1),
+  investigationJournalRetentionDays: z.number().int().nonnegative(),
+  pollStatePath: z.string().min(1),
   hermesSkillsSeedHome: z.string().min(1),
   hermesLocalSkillsPath: z.string().min(1),
   repoCacheDir: z.string().min(1),
@@ -58,12 +62,16 @@ export function loadSettings(): Settings {
     JIRA_JQL: str({ default: "" }),
     JIRA_POLL_INTERVAL_SECONDS: num({ default: 300 }),
     JIRA_POLL_BATCH_SIZE: num({ default: 3 }),
+    JIRA_POLL_CANDIDATE_BATCH_SIZE: num({ default: 15 }),
+    JIRA_POLL_MAX_BACKOFF_SECONDS: num({ default: 3600 }),
     HERMES_BIN: str({ default: "hermes" }),
     HERMES_ARGS: str({ default: "chat --quiet -q" }),
     HERMES_CONFIG_TEMPLATE: str({ default: "config/hermes.config.yaml" }),
     PROMPT_TEMPLATES_DIR: str({ default: "config/prompts" }),
     HERMES_RUNTIME_HOME: str({ default: "data/hermes-home" }),
     INVESTIGATION_JOURNAL_DIR: str({ default: "data/investigations" }),
+    INVESTIGATION_JOURNAL_RETENTION_DAYS: num({ default: 30 }),
+    POLL_STATE_PATH: str({ default: "data/poll-state.json" }),
     HERMES_SKILLS_SEED_HOME: str({ default: "/opt/hermes-seed-home" }),
     HERMES_LOCAL_SKILLS_PATH: str({ default: "skills" }),
     REPO_CACHE_DIR: str({ default: "data/repos" }),
@@ -97,12 +105,16 @@ export function loadSettings(): Settings {
     jiraJql: env.JIRA_JQL || defaultJql,
     jiraPollIntervalSeconds: env.JIRA_POLL_INTERVAL_SECONDS,
     jiraPollBatchSize: env.JIRA_POLL_BATCH_SIZE,
+    jiraPollCandidateBatchSize: env.JIRA_POLL_CANDIDATE_BATCH_SIZE,
+    jiraPollMaxBackoffSeconds: env.JIRA_POLL_MAX_BACKOFF_SECONDS,
     hermesBin: env.HERMES_BIN,
     hermesArgs: splitArgs(env.HERMES_ARGS),
     hermesConfigTemplatePath: env.HERMES_CONFIG_TEMPLATE,
     promptTemplatesDir: env.PROMPT_TEMPLATES_DIR,
     hermesRuntimeHome: env.HERMES_RUNTIME_HOME,
     investigationJournalDir: env.INVESTIGATION_JOURNAL_DIR,
+    investigationJournalRetentionDays: env.INVESTIGATION_JOURNAL_RETENTION_DAYS,
+    pollStatePath: env.POLL_STATE_PATH,
     hermesSkillsSeedHome: env.HERMES_SKILLS_SEED_HOME,
     hermesLocalSkillsPath: env.HERMES_LOCAL_SKILLS_PATH,
     repoCacheDir: env.REPO_CACHE_DIR,
@@ -144,10 +156,10 @@ interface PhaseStepEnv {
 function investigationPhaseMaxSteps(env: PhaseStepEnv): Settings["investigationPhaseMaxSteps"] {
   const globalOverride = env.INVESTIGATION_PHASE_MAX_STEPS.trim();
   if (globalOverride) {
-    const parsed = Number.parseInt(globalOverride, 10);
-    if (!Number.isInteger(parsed) || parsed < 1) {
+    if (!/^[1-9]\d*$/.test(globalOverride)) {
       throw new Error(`INVESTIGATION_PHASE_MAX_STEPS must be a positive integer, got ${globalOverride}`);
     }
+    const parsed = Number(globalOverride);
     return { triage: parsed, code: parsed, evidence: parsed, synthesis: parsed };
   }
 

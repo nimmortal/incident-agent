@@ -46,7 +46,7 @@ For each code path map entry, include:
 End your response with exactly one status block in this format:
 
 <incident-agent-phase-status>
-{"status":"done","summary":"Code brief produced with code paths, runtime signals, alignment, and evidence queries."}
+{"status":"done","summary":"Code brief produced with code paths, runtime signals, alignment, and evidence queries.","artifact":{"phase":"code","summary":"One-sentence code-grounding result.","confidence":"medium","identifiers":["repo/path.ts:function"],"facts":[{"claim":"Concrete code-path fact.","source":"GitHub code","locator":"repo/path.ts:line","confidence":"medium"}],"blockers":[],"nextChecks":["One bounded runtime check."]}}
 </incident-agent-phase-status>
 
 Status rules:
@@ -55,3 +55,4 @@ Status rules:
 - Use "continue" when another bounded read-only code check is available and likely to improve the code brief.
 - For "blocked", include "blockedBy" with the concrete blocker and exact next input or source needed.
 - For "continue", include "nextPrompt" with one specific next code-grounding action.
+- For "done" or "blocked", include the typed `artifact`; preserve code anchors and runtime identifiers, and use empty arrays rather than omitting fields.

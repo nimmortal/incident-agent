@@ -1,14 +1,20 @@
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { X_OK } from "node:constants";
+import { accessSync, chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import type { Settings } from "./config.ts";
+import { assertSafeDelegationConfiguration, createPrivateTempDir } from "./security.ts";
 import { managedSkillTargets } from "./skill-sets.ts";
 
 export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
-  writeRuntimeConfig(settings);
-  seedHermesSkills(settings);
+  assertSafeDelegationConfiguration(process.env);
+  await withRuntimePreparationLock(settings, () => {
+    writeRuntimeConfig(settings);
+    seedHermesSkills(settings);
+  });
   const repoCacheDir = resolve(settings.repoCacheDir);
-  mkdirSync(repoCacheDir, { recursive: true });
+  mkdirSync(repoCacheDir, { recursive: true, mode: 0o700 });
+  chmodSync(repoCacheDir, 0o700);
   const env = {
     ...process.env,
     HOME: runtimeHome(settings),
@@ -26,12 +32,13 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HERMES_DELEGATION_MAX_CONCURRENT_CHILDREN: process.env.HERMES_DELEGATION_MAX_CONCURRENT_CHILDREN || "2",
     HERMES_DELEGATION_MAX_ASYNC_CHILDREN: process.env.HERMES_DELEGATION_MAX_ASYNC_CHILDREN || "2",
     HERMES_DELEGATION_MAX_SPAWN_DEPTH: process.env.HERMES_DELEGATION_MAX_SPAWN_DEPTH || "1",
-    HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE: process.env.HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE || "false",
+    HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE: "false",
     HERMES_DELEGATION_MODEL: process.env.HERMES_DELEGATION_MODEL ?? "",
     HERMES_DELEGATION_PROVIDER: process.env.HERMES_DELEGATION_PROVIDER ?? "",
     HERMES_DELEGATION_REASONING_EFFORT: process.env.HERMES_DELEGATION_REASONING_EFFORT ?? "",
   };
-  configureGitHubCliAuth(settings, env);
+  configureReadOnlyCommandWrappers(env);
+  configureGitHubCliAuth(env);
   configurePostgresSafety(env);
   return env;
 }
@@ -50,10 +57,6 @@ export function runtimeHermesHome(settings: Settings): string {
 
 export function runtimeHome(settings: Settings): string {
   return resolve(settings.hermesRuntimeHome);
-}
-
-export function gitHubCliConfigPath(settings: Settings): string {
-  return join(runtimeHome(settings), ".config", "gh");
 }
 
 export function skillsSeedPath(settings: Settings): string {
@@ -94,15 +97,23 @@ function findHermesSkillPath(skillsPath: string, skillName: string): string | un
 
 function writeRuntimeConfig(settings: Settings): void {
   const configPath = runtimeConfigPath(settings);
-  mkdirSync(dirname(configPath), { recursive: true });
+  mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 });
+  chmodSync(dirname(configPath), 0o700);
 
   const template = readFileSync(settings.hermesConfigTemplatePath, "utf8");
   const config = configureContext7Auth(
-    setMcpServerEnabled(setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled), "context7", true),
+    setMcpToolInclude(
+      setMcpServerEnabled(setMcpServerEnabled(template, "jira", settings.features.sources.jiraJsm.enabled), "context7", true),
+      "jira",
+      jiraReadOnlyTools(process.env),
+    ),
     Boolean(process.env.CONTEXT7_API_KEY?.trim()),
   );
 
-  writeFileSync(configPath, config);
+  const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(temporaryPath, config, { mode: 0o600 });
+  renameSync(temporaryPath, configPath);
+  chmodSync(configPath, 0o600);
 }
 
 function seedHermesSkills(settings: Settings): void {
@@ -123,10 +134,14 @@ function seedHermesSkills(settings: Settings): void {
 
     const staleFlatPath = join(targetDir, skill.name);
     const targetPath = join(targetDir, skill.target);
+    const temporaryPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
     rmSync(staleFlatPath, { recursive: true, force: true });
+    rmSync(temporaryPath, { recursive: true, force: true });
+    mkdirSync(dirname(temporaryPath), { recursive: true });
+    cpSync(sourcePath, temporaryPath, { recursive: true });
     rmSync(targetPath, { recursive: true, force: true });
     mkdirSync(dirname(targetPath), { recursive: true });
-    cpSync(sourcePath, targetPath, { recursive: true });
+    renameSync(temporaryPath, targetPath);
   }
 
   removeDuplicateManagedSkills(targetDir);
@@ -181,13 +196,13 @@ function jiraMcpAuthHeader(env: NodeJS.ProcessEnv): string {
   return `${scheme} ${token}`;
 }
 
-function configureGitHubCliAuth(settings: Settings, env: NodeJS.ProcessEnv): void {
+function configureGitHubCliAuth(env: NodeJS.ProcessEnv): void {
   const token = env.GITHUB_TOKEN?.trim();
   if (!token) {
     return;
   }
 
-  const configDir = gitHubCliConfigPath(settings);
+  const configDir = createPrivateTempDir("incident-agent-gh-");
   mkdirSync(configDir, { recursive: true, mode: 0o700 });
   chmodSync(configDir, 0o700);
 
@@ -206,6 +221,87 @@ function configureGitHubCliAuth(settings: Settings, env: NodeJS.ProcessEnv): voi
   chmodSync(hostsPath, 0o600);
 
   env.GH_CONFIG_DIR = configDir;
+  delete env.GITHUB_TOKEN;
+}
+
+function configureReadOnlyCommandWrappers(env: NodeJS.ProcessEnv): void {
+  const wrapperDir = createPrivateTempDir("incident-agent-bin-");
+  const wrappers = [
+    { command: "gh", envName: "INCIDENT_AGENT_REAL_GH", script: "gh.mjs" },
+    { command: "git", envName: "INCIDENT_AGENT_REAL_GIT", script: "git.mjs" },
+    { command: "cx", envName: "INCIDENT_AGENT_REAL_CX", script: "cx.mjs" },
+    { command: "psql", envName: "INCIDENT_AGENT_REAL_PSQL", script: "psql.mjs" },
+  ] as const;
+
+  for (const wrapper of wrappers) {
+    const binary = findExecutable(wrapper.command, env.PATH);
+    if (!binary) {
+      continue;
+    }
+    const source = resolve("scripts", "runtime-wrappers", wrapper.script);
+    if (!existsSync(source)) {
+      throw new Error(`Missing runtime wrapper ${source}`);
+    }
+    const target = join(wrapperDir, wrapper.command);
+    cpSync(source, target);
+    chmodSync(target, 0o700);
+    env[wrapper.envName] = binary;
+  }
+
+  env.PATH = [wrapperDir, env.PATH].filter(Boolean).join(":");
+}
+
+function findExecutable(command: string, pathValue: string | undefined): string | undefined {
+  for (const directory of pathValue?.split(":") ?? []) {
+    const candidate = join(directory, command);
+    try {
+      accessSync(candidate, X_OK);
+      return candidate;
+    } catch {
+      // Continue searching PATH.
+    }
+  }
+  return undefined;
+}
+
+async function withRuntimePreparationLock(settings: Settings, action: () => void): Promise<void> {
+  const parent = runtimeHermesHome(settings);
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const lockPath = join(parent, ".prepare.lock");
+  const deadline = Date.now() + 30_000;
+
+  while (true) {
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+        throw error;
+      }
+      if (isStaleLock(lockPath)) {
+        rmSync(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for Hermes runtime preparation lock ${lockPath}`);
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    }
+  }
+
+  try {
+    action();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
+}
+
+function isStaleLock(path: string): boolean {
+  try {
+    return Date.now() - statSync(path).mtimeMs > 5 * 60_000;
+  } catch {
+    return false;
+  }
 }
 
 function configurePostgresSafety(env: NodeJS.ProcessEnv): void {
@@ -254,6 +350,24 @@ function configureContext7Auth(config: string, hasApiKey: boolean): string {
   }
 
   return config.replace(/\n\s{4}headers:\n\s{6}CONTEXT7_API_KEY: "\$\{CONTEXT7_API_KEY\}"/, "");
+}
+
+function jiraReadOnlyTools(env: NodeJS.ProcessEnv): string[] {
+  const tools = (env.JIRA_MCP_READONLY_TOOLS ?? "").split(",").map((tool) => tool.trim()).filter(Boolean);
+  const unsafe = tools.filter((tool) => /(^|[_-])(create|update|delete|remove|add|set|transition|assign|comment|write|edit|move|link|upload|attach|archive|restore)([_-]|$)/i.test(tool));
+  if (unsafe.length > 0) {
+    throw new Error(`JIRA_MCP_READONLY_TOOLS contains mutation-looking tools: ${unsafe.join(", ")}`);
+  }
+  return [...new Set(tools)];
+}
+
+function setMcpToolInclude(config: string, serverName: string, tools: string[]): string {
+  const escapedName = escapeRegExp(serverName);
+  const pattern = new RegExp(`(^\\s{2}${escapedName}:\\n[\\s\\S]*?^\\s{6}include:\\s*)\\[[^\\n]*\\]`, "m");
+  if (!pattern.test(config)) {
+    throw new Error(`Hermes config template is missing mcp_servers.${serverName}.tools.include`);
+  }
+  return config.replace(pattern, `$1[${tools.map(yamlString).join(", ")}]`);
 }
 
 function escapeRegExp(value: string): string {

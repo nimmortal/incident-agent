@@ -3,8 +3,6 @@ import type { Settings } from "./config.ts";
 export const incidentAgentSkill = "incident-agent" as const;
 export const companyContextSkill = "company-context" as const;
 export const coralogixSkills = ["cx-telemetry-querying", "cx-cases"] as const;
-export const githubSkillNames = ["github-auth", "github-repo-management", "github-pr-workflow", "github-issues"] as const;
-export const githubSkills = githubSkillNames.map((skill) => `github/${skill}`) as `github/${(typeof githubSkillNames)[number]}`[];
 export const githubCodeExplorationSkill = "github-code-exploration" as const;
 export const postgresSkills = ["postgres-readonly"] as const;
 
@@ -13,7 +11,6 @@ export const managedSkillTargets = [
   { name: companyContextSkill, target: companyContextSkill },
   { name: githubCodeExplorationSkill, target: githubCodeExplorationSkill },
   ...coralogixSkills.map((skill) => ({ name: skill, target: skill })),
-  ...githubSkillNames.map((skill) => ({ name: skill, target: `github/${skill}` })),
   ...postgresSkills.map((skill) => ({ name: skill, target: skill })),
 ] as const;
 
@@ -32,7 +29,7 @@ export function optionalCoralogixSkills(settings: Settings): string[] {
 }
 
 export function optionalGithubSkills(settings: Settings): string[] {
-  return settings.features.sources.github.enabled ? [...githubSkills, githubCodeExplorationSkill] : [];
+  return settings.features.sources.github.enabled ? [githubCodeExplorationSkill] : [];
 }
 
 export function optionalPostgresSkills(settings: Settings): string[] {

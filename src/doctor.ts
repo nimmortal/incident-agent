@@ -1,236 +1,200 @@
-import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import {
-  gitHubCliConfigPath,
-  hasHermesSkill,
-  localSkillsPath,
-  runtimeConfigPath,
-  runtimeHome,
-  runtimeSkillsPath,
-  skillsSeedPath,
-} from "./hermes-config.ts";
+import { hasHermesSkill, localSkillsPath, runtimeConfigPath, runtimeHome, runtimeSkillsPath, skillsSeedPath } from "./hermes-config.ts";
 import { probeCopilotAuth } from "./runtime-preflight.ts";
-import { managedSkills } from "./skill-sets.ts";
+import { managedSkills, optionalSourceSkills, wrapperSkills } from "./skill-sets.ts";
+
+interface CheckResult {
+  label: string;
+  ok: boolean;
+  required: boolean;
+  detail: string;
+}
 
 async function main(): Promise<void> {
   const settings = loadSettings();
   const verifySources = process.argv.includes("--verify-sources");
+  const strict = process.argv.includes("--strict");
+  const checks: CheckResult[] = [];
 
   console.log("Features:");
   for (const feature of listFeatures(settings.features)) {
+    const required = feature.kind === "provider";
     const state = feature.enabled ? "enabled" : `disabled (missing ${feature.missingEnv.join(", ")})`;
     console.log(`- ${feature.name} [${feature.kind}]: ${state}`);
+    checks.push({ label: feature.name, ok: feature.enabled || !required, required, detail: state });
   }
 
   console.log("\nConfig:");
-  console.log(
-    `- local template: ${existsSync(settings.hermesConfigTemplatePath) ? "found" : "missing"} (${settings.hermesConfigTemplatePath})`,
-  );
-  console.log(`- prompt templates: ${existsSync(settings.promptTemplatesDir) ? "found" : "missing"} (${settings.promptTemplatesDir})`);
+  report(checks, "Hermes config template", existsSync(settings.hermesConfigTemplatePath), true, settings.hermesConfigTemplatePath);
+  report(checks, "Prompt templates", existsSync(settings.promptTemplatesDir), true, settings.promptTemplatesDir);
   console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
   console.log(`- runtime home: ${runtimeHome(settings)}`);
   console.log(`- runtime skills path: ${runtimeSkillsPath(settings)}`);
 
   const seedPath = skillsSeedPath(settings);
   const localPath = localSkillsPath(settings);
+  const requiredSkills = new Set(wrapperSkills(optionalSourceSkills(settings)));
   console.log(`- bundled skill seed: ${existsSync(seedPath) ? "found" : "missing"} (${seedPath})`);
   console.log(`- local skills path: ${existsSync(localPath) ? "found" : "missing"} (${localPath})`);
   for (const skill of managedSkills) {
-    const state = hasHermesSkill(seedPath, skill) || hasHermesSkill(localPath, skill) ? "found" : "missing";
-    console.log(`  - ${skill}: ${state}`);
+    const found = hasHermesSkill(seedPath, skill) || hasHermesSkill(localPath, skill);
+    const required = requiredSkills.has(skill);
+    console.log(`  - ${skill}: ${found ? "found" : "missing"}${required ? " [required]" : " [optional]"}`);
+    checks.push({ label: `skill:${skill}`, ok: found || !required, required, detail: found ? "found" : "missing" });
   }
 
-  console.log("\nHermes:");
-  const result = spawnSync(settings.hermesBin, ["--version"], {
-    encoding: "utf8",
-    timeout: 15_000,
-  });
-  if (result.error) {
-    console.log(`- binary: missing or failed (${settings.hermesBin})`);
-  } else {
-    const output = (result.stdout || result.stderr).trim();
-    console.log(`- binary: found (${output || "no version output"})`);
-  }
-
-  console.log("\nGitHub CLI:");
-  if (process.env.GITHUB_TOKEN?.trim()) {
-    console.log("- token source: GITHUB_TOKEN");
-    console.log(`- gh config path for Hermes: ${gitHubCliConfigPath(settings)}`);
-  } else {
-    console.log("- token source: missing GITHUB_TOKEN");
-  }
-  const ghResult = spawnSync("gh", ["--version"], {
-    encoding: "utf8",
-    timeout: 15_000,
-  });
-  if (ghResult.error) {
-    console.log("- gh: missing or failed");
-  } else {
-    const output = (ghResult.stdout || ghResult.stderr).split(/\r?\n/)[0]?.trim();
-    console.log(`- gh: found (${output || "no version output"})`);
-  }
-
-  console.log("\nCoralogix CLI:");
-  const cxResult = spawnSync("cx", ["--version"], {
-    encoding: "utf8",
-    timeout: 15_000,
-  });
-  if (cxResult.error) {
-    console.log("- cx: missing or failed");
-  } else {
-    const output = (cxResult.stdout || cxResult.stderr).split(/\r?\n/)[0]?.trim();
-    console.log(`- cx: found (${output || "no version output"})`);
-  }
-
-  console.log("\nPostgres CLI:");
-  const psqlResult = spawnSync("psql", ["--version"], {
-    encoding: "utf8",
-    timeout: 15_000,
-  });
-  if (psqlResult.error) {
-    console.log("- psql: missing or failed");
-  } else {
-    const output = (psqlResult.stdout || psqlResult.stderr).split(/\r?\n/)[0]?.trim();
-    console.log(`- psql: found (${output || "no version output"})`);
-  }
+  console.log("\nRuntime binaries:");
+  reportBinary(checks, "Hermes", settings.hermesBin, true);
+  reportBinary(checks, "GitHub CLI", "gh", settings.features.sources.github.enabled);
+  reportBinary(checks, "Git", "git", settings.features.sources.github.enabled);
+  reportBinary(checks, "Coralogix CLI", "cx", settings.features.sources.coralogix.enabled);
+  reportBinary(checks, "Postgres CLI", "psql", settings.features.sources.postgres.enabled);
 
   if (verifySources) {
-    await verifyLiveSources();
+    console.log("\nLive source probes:");
+    checks.push(await verifyCopilot());
+    if (jiraMcpCredentialsConfigured()) checks.push(await verifyJiraMcp());
+    if (settings.features.sources.github.enabled) checks.push(verifyGitHub());
+    if (settings.features.sources.coralogix.enabled) checks.push(verifyCoralogix());
+    if (settings.features.sources.postgres.enabled) checks.push(verifyPostgres());
+  }
+
+  const failures = checks.filter((check) => check.required && !check.ok);
+  if (strict && failures.length > 0) {
+    console.error(`\nStrict readiness failed (${failures.length}):`);
+    for (const failure of failures) console.error(`- ${failure.label}: ${failure.detail}`);
+    process.exitCode = 1;
+  } else if (strict) {
+    console.log("\nStrict readiness passed");
   }
 }
 
-async function verifyLiveSources(): Promise<void> {
-  console.log("\nLive Source Probes:");
-  await verifyCopilot();
-  await verifyJiraMcp();
-  verifyGitHub();
-  verifyCoralogix();
-  verifyPostgres();
+function report(checks: CheckResult[], label: string, ok: boolean, required: boolean, detail: string): void {
+  console.log(`- ${label}: ${ok ? "found" : "missing"} (${detail})`);
+  checks.push({ label, ok, required, detail });
 }
 
-async function verifyCopilot(): Promise<void> {
+function reportBinary(checks: CheckResult[], label: string, binary: string, required: boolean): void {
+  const result = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 15_000 });
+  const ok = !result.error && result.status === 0;
+  const detail = ok ? (result.stdout || result.stderr).split(/\r?\n/)[0]?.trim() || "no version output" : result.error?.message || `exit ${result.status}`;
+  console.log(`- ${label}: ${ok ? "found" : "missing or failed"} (${detail})${required ? " [required]" : " [optional]"}`);
+  checks.push({ label, ok: ok || !required, required, detail });
+}
+
+async function verifyCopilot(): Promise<CheckResult> {
   const probe = await probeCopilotAuth();
-  const label = { ok: "authenticated", "auth-failed": "auth failed", unreachable: "failed", skipped: "skipped" }[probe.status];
-  console.log(`- Copilot: ${label} (${probe.detail.split("\n")[0]})`);
-  if (probe.status === "auth-failed" && probe.detail.includes("\n")) {
-    for (const line of probe.detail.split("\n").slice(1)) {
-      console.log(`    ${line}`);
-    }
-  }
+  const ok = probe.status === "ok";
+  console.log(`- Copilot: ${ok ? "authenticated" : probe.status} (${probe.detail.split("\n")[0]})`);
+  return { label: "Copilot live authentication", ok, required: true, detail: probe.detail };
 }
 
-async function verifyJiraMcp(): Promise<void> {
+async function verifyJiraMcp(): Promise<CheckResult> {
   const url = process.env.JIRA_MCP_URL?.trim();
-  if (!url) {
-    console.log("- Jira MCP: skipped (missing JIRA_MCP_URL)");
-    return;
-  }
-
+  if (!url) return failed("Jira MCP", "missing JIRA_MCP_URL");
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: jiraMcpProbeHeaders(),
-      signal: AbortSignal.timeout(10_000),
+    const initialize = await mcpRequest(url, {
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "incident-agent-doctor", version: "0.1.0" } },
     });
-    if (response.status === 401 || response.status === 403) {
-      console.log(`- Jira MCP: auth failed (${response.status})`);
-      return;
-    }
-    if (response.status >= 500) {
-      console.log(`- Jira MCP: failed (${response.status})`);
-      return;
-    }
-    console.log(`- Jira MCP: reachable (${response.status})`);
+    const protocolVersion = String(initialize.body?.result?.protocolVersion ?? "2025-06-18");
+    const sessionId = initialize.response.headers.get("mcp-session-id");
+    await mcpRequest(url, { jsonrpc: "2.0", method: "notifications/initialized" }, sessionId, protocolVersion);
+    const toolsResponse = await mcpRequest(url, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, sessionId, protocolVersion);
+    const available = Array.isArray(toolsResponse.body?.result?.tools)
+      ? toolsResponse.body.result.tools.map((tool: { name?: unknown }) => String(tool.name ?? "")).filter(Boolean)
+      : [];
+    const allowed = jiraReadOnlyTools();
+    const missing = allowed.filter((tool) => !available.includes(tool));
+    console.log(`- Jira MCP: initialized; ${available.length} tools available; allowlist: ${allowed.join(", ") || "(none)"}`);
+    if (allowed.length === 0) return failed("Jira MCP", `set JIRA_MCP_READONLY_TOOLS from available tools: ${available.join(", ")}`);
+    if (missing.length > 0) return failed("Jira MCP", `allowlisted tools missing from server: ${missing.join(", ")}`);
+    return { label: "Jira MCP", ok: true, required: true, detail: `${available.length} tools; allowlist verified` };
   } catch (error) {
-    console.log(`- Jira MCP: failed (${errorMessage(error)})`);
+    return failed("Jira MCP", errorMessage(error));
   }
 }
 
-function verifyGitHub(): void {
-  if (!process.env.GITHUB_TOKEN?.trim()) {
-    console.log("- GitHub: skipped (missing GITHUB_TOKEN)");
-    return;
-  }
+async function mcpRequest(
+  url: string,
+  body: Record<string, unknown>,
+  sessionId?: string | null,
+  protocolVersion?: string,
+): Promise<{ response: Response; body?: any }> {
+  const headers: Record<string, string> = {
+    Accept: "application/json, text/event-stream",
+    "Content-Type": "application/json",
+    ...jiraMcpProbeHeaders(),
+  };
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (protocolVersion) headers["MCP-Protocol-Version"] = protocolVersion;
+  const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const text = await response.text();
+  if (!text.trim()) return { response };
+  const payload = response.headers.get("content-type")?.includes("text/event-stream")
+    ? text.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).find(Boolean)
+    : text;
+  return { response, body: payload ? JSON.parse(payload) : undefined };
+}
 
-  const result = spawnSync("gh", ["auth", "status", "--hostname", "github.com"], {
-    encoding: "utf8",
-    timeout: 15_000,
-    stdio: "pipe",
+function verifyGitHub(): CheckResult {
+  const result = spawnSync("gh", ["auth", "status", "--hostname", "github.com"], { encoding: "utf8", timeout: 15_000, stdio: "pipe" });
+  const ok = !result.error && result.status === 0;
+  const detail = ok ? "authenticated" : commandFailure(result);
+  console.log(`- GitHub: ${detail}`);
+  return { label: "GitHub", ok, required: true, detail };
+}
+
+function verifyCoralogix(): CheckResult {
+  const result = spawnSync("cx", ["--read-only", "--output", "json", "logs", "limit 1", "--start", "now-5m", "--limit", "1", "--tier", "frequent"], {
+    encoding: "utf8", timeout: 15_000, stdio: "pipe",
   });
-  if (result.error || result.status !== 0) {
-    console.log(`- GitHub: failed (${commandFailure(result)})`);
-    return;
-  }
-  console.log("- GitHub: authenticated");
+  const ok = !result.error && result.status === 0;
+  const detail = ok ? "authenticated read-only query succeeded" : commandFailure(result);
+  console.log(`- Coralogix: ${detail}`);
+  return { label: "Coralogix", ok, required: true, detail };
 }
 
-function verifyCoralogix(): void {
-  if (!process.env.CX_API_KEY?.trim() || !process.env.CX_REGION?.trim()) {
-    console.log("- Coralogix: skipped (missing CX_API_KEY or CX_REGION)");
-    return;
-  }
-  console.log("- Coralogix: not probed (configure a safe account-specific read query before enabling live cx probes)");
+function verifyPostgres(): CheckResult {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) return failed("Postgres", "missing DATABASE_URL");
+  const env: NodeJS.ProcessEnv = { ...process.env, PGDATABASE: databaseUrl };
+  delete env.DATABASE_URL;
+  const result = spawnSync("psql", ["-X", "-v", "ON_ERROR_STOP=1", "--csv", "-c", "BEGIN READ ONLY; SET LOCAL statement_timeout = '5s'; SET LOCAL lock_timeout = '1s'; SELECT now() LIMIT 1; ROLLBACK;"], {
+    encoding: "utf8", timeout: 10_000, stdio: "pipe", env,
+  });
+  const ok = !result.error && result.status === 0;
+  const detail = ok ? "read-only query succeeded" : commandFailure(result);
+  console.log(`- Postgres: ${detail}`);
+  return { label: "Postgres", ok, required: true, detail };
 }
 
-function verifyPostgres(): void {
-  if (!process.env.DATABASE_URL?.trim()) {
-    console.log("- Postgres: skipped (missing DATABASE_URL)");
-    return;
-  }
-
-  const result = spawnSync(
-    "psql",
-    [
-      process.env.DATABASE_URL,
-      "-X",
-      "-v",
-      "ON_ERROR_STOP=1",
-      "--csv",
-      "-c",
-      [
-        "BEGIN READ ONLY",
-        `SET LOCAL statement_timeout = '${postgresTimeoutMs("POSTGRES_STATEMENT_TIMEOUT_MS", 5_000)}ms'`,
-        `SET LOCAL lock_timeout = '${postgresTimeoutMs("POSTGRES_LOCK_TIMEOUT_MS", 1_000)}ms'`,
-        "SELECT now() LIMIT 1",
-        "ROLLBACK",
-      ].join("; "),
-    ],
-    {
-      encoding: "utf8",
-      timeout: postgresTimeoutMs("POSTGRES_STATEMENT_TIMEOUT_MS", 5_000) + 5_000,
-      stdio: "pipe",
-    },
-  );
-  if (result.error || result.status !== 0) {
-    console.log(`- Postgres: failed (${commandFailure(result)})`);
-    return;
-  }
-  console.log("- Postgres: read-only query succeeded");
+function failed(label: string, detail: string): CheckResult {
+  console.log(`- ${label}: failed (${detail})`);
+  return { label, ok: false, required: true, detail };
 }
 
-function postgresTimeoutMs(envName: string, fallback: number): number {
-  const parsed = Number.parseInt(process.env[envName] ?? "", 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+function jiraReadOnlyTools(): string[] {
+  return (process.env.JIRA_MCP_READONLY_TOOLS ?? "").split(",").map((tool) => tool.trim()).filter(Boolean);
+}
+
+function jiraMcpCredentialsConfigured(): boolean {
+  return Boolean(process.env.JIRA_MCP_URL?.trim() && process.env.JIRA_MCP_TOKEN?.trim());
 }
 
 function jiraMcpProbeHeaders(): Record<string, string> {
   const token = process.env.JIRA_MCP_TOKEN?.trim();
-  if (!token) {
-    return {};
-  }
-  const scheme = process.env.JIRA_MCP_AUTH_SCHEME?.trim() || "Bearer";
-  return { Authorization: `${scheme} ${token}` };
+  return token ? { Authorization: `${process.env.JIRA_MCP_AUTH_SCHEME?.trim() || "Bearer"} ${token}` } : {};
 }
 
 function commandFailure(result: ReturnType<typeof spawnSync>): string {
-  if (result.error) {
-    return result.error.message;
-  }
-  const output = [String(result.stderr || "").trim(), String(result.stdout || "").trim()].filter(Boolean).join("; ");
-  return output || `exit ${result.status}`;
+  if (result.error) return result.error.message;
+  return [String(result.stderr || "").trim(), String(result.stdout || "").trim()].filter(Boolean).join("; ") || `exit ${result.status}`;
 }
 
 function errorMessage(error: unknown): string {

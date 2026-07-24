@@ -1,6 +1,14 @@
 services:
   incident-agent:
     build: .
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    stop_grace_period: 20s
     env_file:
       - path: .env.local
         required: false
@@ -9,4 +17,6 @@ services:
       - ./config/prompts:/app/config/prompts:ro
       - ./skills:/app/skills:ro
       - ./data:/app/data
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=64m
     command: ["npm", "run", "poll"]
