@@ -111,10 +111,7 @@ async function verifyAtlassianMcp(): Promise<CheckResult> {
       : [];
     const allowed = atlassianReadOnlyTools(process.env);
     const missing = allowed.filter((tool) => !available.includes(tool));
-    console.log(`- Atlassian MCP: initialized; ${available.length} tools available; allowlist: ${allowed.join(", ") || "(none)"}`);
-    if (allowed.length === 0) {
-      return failed("Atlassian MCP", `set JIRA_MCP_READONLY_TOOLS from available tools: ${available.join(", ")}`);
-    }
+    console.log(`- Atlassian MCP: initialized; ${available.length} tools available; harness allowlist: ${allowed.join(", ")}`);
     if (missing.length > 0) return failed("Atlassian MCP", `allowlisted tools missing from server: ${missing.join(", ")}`);
     return { label: "Atlassian MCP", ok: true, required: true, detail: `${available.length} tools; allowlist verified` };
   } catch (error) {

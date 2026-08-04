@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildFeatures } from "./features.ts";
-import { atlassianReadOnlyTools, confluenceKnowledgeReadOnlyTools, delegationModel } from "./hermes-config.ts";
+import { atlassianReadOnlyTools, confluenceKnowledgeReadOnlyTools, delegationModel, jiraJsmReadOnlyTools } from "./hermes-config.ts";
 
 test("enables pinned Confluence knowledge when the shared MCP and folder are configured", () => {
   const shared = {
@@ -11,6 +11,7 @@ test("enables pinned Confluence knowledge when the shared MCP and folder are con
   };
 
   const missingFolder = buildFeatures(shared);
+  assert.equal(missingFolder.sources.jiraJsm.enabled, true);
   assert.equal(missingFolder.sources.confluence.enabled, false);
   assert.deepEqual(missingFolder.sources.confluence.missingEnv, ["CONFLUENCE_KNOWLEDGE_FOLDER"]);
 
@@ -22,17 +23,12 @@ test("enables pinned Confluence knowledge when the shared MCP and folder are con
 });
 
 test("adds the harness-owned Confluence tools only when knowledge is pinned", () => {
-  assert.deepEqual(atlassianReadOnlyTools({ JIRA_MCP_READONLY_TOOLS: "get_issue" }), ["get_issue"]);
+  assert.deepEqual(atlassianReadOnlyTools({}), [...jiraJsmReadOnlyTools]);
   assert.deepEqual(
     atlassianReadOnlyTools({
-      JIRA_MCP_READONLY_TOOLS: "get_issue, search_issues",
       CONFLUENCE_KNOWLEDGE_FOLDER: "https://example.atlassian.net/wiki/spaces/OPS/folder/knowledge",
     }),
-    ["get_issue", "search_issues", ...confluenceKnowledgeReadOnlyTools],
-  );
-  assert.throws(
-    () => atlassianReadOnlyTools({ JIRA_MCP_READONLY_TOOLS: "get_issue,update_issue" }),
-    /mutation-looking tools: update_issue/,
+    [...jiraJsmReadOnlyTools, ...confluenceKnowledgeReadOnlyTools],
   );
 });
 

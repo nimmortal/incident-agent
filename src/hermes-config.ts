@@ -6,8 +6,14 @@ import type { Settings } from "./config.ts";
 import { assertSafeDelegationConfiguration, createPrivateTempDir } from "./security.ts";
 import { companyContextSkill, managedSkillTargets } from "./skill-sets.ts";
 
-export const confluenceKnowledgeReadOnlyTools = [
+export const jiraJsmReadOnlyTools = [
   "getAccessibleAtlassianResources",
+  "getJiraIssue",
+  "getJiraIssueRemoteIssueLinks",
+  "searchJiraIssuesUsingJql",
+] as const;
+
+export const confluenceKnowledgeReadOnlyTools = [
   "searchConfluenceUsingCql",
   "getConfluencePage",
   "getConfluencePageDescendants",
@@ -402,14 +408,7 @@ function configureContext7Auth(config: string, hasApiKey: boolean): string {
 }
 
 export function atlassianReadOnlyTools(env: NodeJS.ProcessEnv): string[] {
-  const tools = (env.JIRA_MCP_READONLY_TOOLS ?? "")
-    .split(",")
-    .map((tool) => tool.trim())
-    .filter(Boolean);
-  const unsafe = tools.filter((tool) => /(^|[_-])(create|update|delete|remove|add|set|transition|assign|comment|write|edit|move|link|upload|attach|archive|restore)([_-]|$)/i.test(tool));
-  if (unsafe.length > 0) {
-    throw new Error(`JIRA_MCP_READONLY_TOOLS contains mutation-looking tools: ${unsafe.join(", ")}`);
-  }
+  const tools: string[] = [...jiraJsmReadOnlyTools];
   if (env.CONFLUENCE_KNOWLEDGE_FOLDER?.trim()) {
     tools.push(...confluenceKnowledgeReadOnlyTools);
   }

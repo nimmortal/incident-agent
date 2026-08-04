@@ -48,7 +48,6 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
       jiraJsm: feature("source:jira-jsm", "source", "Jira/JSM", "Tickets and incident workflow through Jira MCP.", [
         "JIRA_MCP_URL",
         "JIRA_MCP_TOKEN",
-        "JIRA_MCP_READONLY_TOOLS",
       ], env),
       confluence: feature(
         "source:confluence",

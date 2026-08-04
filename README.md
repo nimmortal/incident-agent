@@ -39,9 +39,9 @@ The first version is intentionally simple:
 
 Read-only behavior is enforced in layers, not only requested in prompts:
 
-- The shared Atlassian MCP exposes only names in `JIRA_MCP_READONLY_TOOLS` plus
-  the harness-owned pinned-Confluence read tools through Hermes' `tools.include`
-  filter.
+- The shared Atlassian MCP exposes only the harness-owned Jira/JSM read tools,
+  plus pinned-Confluence read tools when configured, through Hermes'
+  `tools.include` filter.
 - Hermes-launched `gh`, `git`, and `psql` resolve to wrapper allowlists that
   block remote and database mutations; `cx` is forced into its native
   `--read-only` mode even when a generated command omits that flag.
@@ -306,16 +306,20 @@ compatibility):
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
 - `JIRA_MCP_AUTH_SCHEME`: auth scheme for the Jira/JSM MCP endpoint. Defaults to `Bearer`; use `Basic` when `JIRA_MCP_TOKEN` is `base64(email:api-token)`.
 - `JIRA_MCP_TOKEN`: token for the Jira/JSM MCP endpoint.
-- `JIRA_MCP_READONLY_TOOLS`: explicit comma-separated allowlist of original MCP
-  tool names that only read Jira/JSM. The wrapper rejects mutation-looking names
-  and renders this list into Hermes' `tools.include` policy.
+
+The Jira/JSM tool allowlist is owned by the harness and does not require an
+environment variable:
+
+- `getAccessibleAtlassianResources`
+- `getJiraIssue`
+- `getJiraIssueRemoteIssueLinks`
+- `searchJiraIssuesUsingJql`
 
 For a personal Atlassian API token encoded as `base64(email:api-token)`, use:
 
 ```env
 JIRA_MCP_AUTH_SCHEME=Basic
 JIRA_MCP_TOKEN=<base64-email-colon-api-token>
-JIRA_MCP_READONLY_TOOLS=get_issue,search_issues,get_comments
 ```
 
 The same Atlassian MCP endpoint can expose pinned Confluence company knowledge.
@@ -342,7 +346,7 @@ The harness adds only these Confluence tools when a folder is pinned:
 - `getConfluencePage`
 - `getConfluencePageDescendants`
 
-They are merged with the configured Jira tools into the generated Hermes MCP
+They are merged with the harness-owned Jira tools into the generated Hermes MCP
 allowlist. Use `npm run doctor -- --verify-sources` to verify that the connected
 Atlassian MCP server exposes every harness-owned tool.
 
