@@ -217,16 +217,29 @@ function readPromptTemplate(settings: Settings, name: string): string {
 function featureContext(settings: Settings): string {
   const features = [
     settings.features.sources.jiraJsm,
+    settings.features.sources.confluence,
     settings.features.sources.github,
     settings.features.sources.context7,
     settings.features.sources.coralogix,
     settings.features.sources.postgres,
   ];
+  const confluence = settings.features.sources.confluence;
+  const companyKnowledge = confluence.enabled
+    ? [
+        "Pinned company knowledge:",
+        `- Confluence folder: ${settings.confluenceKnowledgeFolder}`,
+        settings.confluenceKnowledgeUseUnconfirmed
+          ? "- Approval policy: use pages as-is regardless of draft or unconfirmed state; do not exclude or downgrade a page solely because of that state."
+          : "- Approval policy: use only human-approved or confirmed pages; exclude draft or unconfirmed pages from factual context.",
+        "- Treat eligible pages as authoritative company context for investigation planning. At the start of an investigation, search this folder for the affected service, error, and identifiers before forming hypotheses. Stay inside the pinned folder, record page locators and update/state metadata, and verify incident-specific claims against current evidence when possible.",
+      ]
+    : [];
   return [
     "Configured sources:",
     ...features.map((feature) => {
       const state = feature.enabled ? "enabled" : `disabled, missing ${feature.missingEnv.join(", ")}`;
       return `- ${feature.name}: ${state}`;
     }),
+    ...companyKnowledge,
   ].join("\n");
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 export const featureIdSchema = z.enum([
   "provider:copilot",
   "source:jira-jsm",
+  "source:confluence",
   "source:github",
   "source:context7",
   "source:coralogix",
@@ -28,6 +29,7 @@ export const featureRegistrySchema = z.object({
   }),
   sources: z.object({
     jiraJsm: featureSchema,
+    confluence: featureSchema,
     github: featureSchema,
     context7: featureSchema,
     coralogix: featureSchema,
@@ -48,6 +50,14 @@ export function buildFeatures(env: NodeJS.ProcessEnv): FeatureRegistry {
         "JIRA_MCP_TOKEN",
         "JIRA_MCP_READONLY_TOOLS",
       ], env),
+      confluence: feature(
+        "source:confluence",
+        "source",
+        "Pinned Confluence knowledge",
+        "Company knowledge from one configured Confluence folder through the shared Atlassian MCP endpoint.",
+        ["JIRA_MCP_URL", "JIRA_MCP_TOKEN", "CONFLUENCE_KNOWLEDGE_FOLDER"],
+        env,
+      ),
       github: feature("source:github", "source", "GitHub", "Code, commits, deployments, PRs, and workflow runs through gh.", [
         "GITHUB_TOKEN",
       ], env),
@@ -78,6 +88,7 @@ export function listFeatures(registry: FeatureRegistry): Feature[] {
   return [
     registry.provider.copilot,
     registry.sources.jiraJsm,
+    registry.sources.confluence,
     registry.sources.github,
     registry.sources.context7,
     registry.sources.coralogix,
@@ -105,6 +116,8 @@ function getFeature(registry: FeatureRegistry, featureId: FeatureId): Feature {
       return registry.provider.copilot;
     case "source:jira-jsm":
       return registry.sources.jiraJsm;
+    case "source:confluence":
+      return registry.sources.confluence;
     case "source:github":
       return registry.sources.github;
     case "source:context7":

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 import { loadSettings } from "./config.ts";
 import { listFeatures } from "./features.ts";
-import { hasHermesSkill, localSkillsPath, runtimeConfigPath, runtimeHome, runtimeSkillsPath, skillsSeedPath } from "./hermes-config.ts";
+import { atlassianReadOnlyTools, hasHermesSkill, localSkillsPath, runtimeConfigPath, runtimeHome, runtimeSkillsPath, skillsSeedPath } from "./hermes-config.ts";
 import { probeCopilotAuth } from "./runtime-preflight.ts";
 import { managedSkills, optionalSourceSkills, wrapperSkills } from "./skill-sets.ts";
 
@@ -34,6 +34,7 @@ async function main(): Promise<void> {
   console.log(`- generated runtime path: ${runtimeConfigPath(settings)}`);
   console.log(`- runtime home: ${runtimeHome(settings)}`);
   console.log(`- runtime skills path: ${runtimeSkillsPath(settings)}`);
+  console.log(`- Confluence unconfirmed-content override: ${settings.confluenceKnowledgeUseUnconfirmed ? "enabled" : "disabled"}`);
 
   const seedPath = skillsSeedPath(settings);
   const localPath = localSkillsPath(settings);
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
   if (verifySources) {
     console.log("\nLive source probes:");
     checks.push(await verifyCopilot());
-    if (jiraMcpCredentialsConfigured()) checks.push(await verifyJiraMcp());
+    if (jiraMcpCredentialsConfigured()) checks.push(await verifyAtlassianMcp());
     if (settings.features.sources.github.enabled) checks.push(verifyGitHub());
     if (settings.features.sources.coralogix.enabled) checks.push(verifyCoralogix());
     if (settings.features.sources.postgres.enabled) checks.push(verifyPostgres());
@@ -93,9 +94,9 @@ async function verifyCopilot(): Promise<CheckResult> {
   return { label: "Copilot live authentication", ok, required: true, detail: probe.detail };
 }
 
-async function verifyJiraMcp(): Promise<CheckResult> {
+async function verifyAtlassianMcp(): Promise<CheckResult> {
   const url = process.env.JIRA_MCP_URL?.trim();
-  if (!url) return failed("Jira MCP", "missing JIRA_MCP_URL");
+  if (!url) return failed("Atlassian MCP", "missing JIRA_MCP_URL");
   try {
     const initialize = await mcpRequest(url, {
       jsonrpc: "2.0", id: 1, method: "initialize",
@@ -108,14 +109,16 @@ async function verifyJiraMcp(): Promise<CheckResult> {
     const available = Array.isArray(toolsResponse.body?.result?.tools)
       ? toolsResponse.body.result.tools.map((tool: { name?: unknown }) => String(tool.name ?? "")).filter(Boolean)
       : [];
-    const allowed = jiraReadOnlyTools();
+    const allowed = atlassianReadOnlyTools(process.env);
     const missing = allowed.filter((tool) => !available.includes(tool));
-    console.log(`- Jira MCP: initialized; ${available.length} tools available; allowlist: ${allowed.join(", ") || "(none)"}`);
-    if (allowed.length === 0) return failed("Jira MCP", `set JIRA_MCP_READONLY_TOOLS from available tools: ${available.join(", ")}`);
-    if (missing.length > 0) return failed("Jira MCP", `allowlisted tools missing from server: ${missing.join(", ")}`);
-    return { label: "Jira MCP", ok: true, required: true, detail: `${available.length} tools; allowlist verified` };
+    console.log(`- Atlassian MCP: initialized; ${available.length} tools available; allowlist: ${allowed.join(", ") || "(none)"}`);
+    if (allowed.length === 0) {
+      return failed("Atlassian MCP", `set JIRA_MCP_READONLY_TOOLS from available tools: ${available.join(", ")}`);
+    }
+    if (missing.length > 0) return failed("Atlassian MCP", `allowlisted tools missing from server: ${missing.join(", ")}`);
+    return { label: "Atlassian MCP", ok: true, required: true, detail: `${available.length} tools; allowlist verified` };
   } catch (error) {
-    return failed("Jira MCP", errorMessage(error));
+    return failed("Atlassian MCP", errorMessage(error));
   }
 }
 
@@ -177,10 +180,6 @@ function verifyPostgres(): CheckResult {
 function failed(label: string, detail: string): CheckResult {
   console.log(`- ${label}: failed (${detail})`);
   return { label, ok: false, required: true, detail };
-}
-
-function jiraReadOnlyTools(): string[] {
-  return (process.env.JIRA_MCP_READONLY_TOOLS ?? "").split(",").map((tool) => tool.trim()).filter(Boolean);
 }
 
 function jiraMcpCredentialsConfigured(): boolean {

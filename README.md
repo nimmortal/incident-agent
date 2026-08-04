@@ -6,7 +6,7 @@ The first version is intentionally simple:
 
 - exposes a small CLI for ad-hoc investigation commands
 - runs a wrapper-owned supervised Jira/JSM polling loop with durable local checkpoints and backoff
-- delegates read-only Jira, GitHub, Context7 docs, Coralogix, and Postgres investigation to Hermes tools and CLIs
+- delegates read-only Jira, pinned Confluence knowledge, GitHub, Context7 docs, Coralogix, and Postgres investigation to Hermes tools and CLIs
 - runs end-to-end ticket investigation in triage, code grounding, evidence, and synthesis phases
 - runs bounded goal loops for autonomous multi-step investigation
 - writes compact investigation journals under `./data/investigations`
@@ -39,8 +39,9 @@ The first version is intentionally simple:
 
 Read-only behavior is enforced in layers, not only requested in prompts:
 
-- Jira MCP exposes only names in `JIRA_MCP_READONLY_TOOLS` through Hermes'
-  `tools.include` filter.
+- The shared Atlassian MCP exposes only names in `JIRA_MCP_READONLY_TOOLS` plus
+  the harness-owned pinned-Confluence read tools through Hermes' `tools.include`
+  filter.
 - Hermes-launched `gh`, `git`, and `psql` resolve to wrapper allowlists that
   block remote and database mutations; `cx` is forced into its native
   `--read-only` mode even when a generated command omits that flag.
@@ -298,7 +299,9 @@ GitHub or Hermes changes the required integration id.
 
 If Hermes still reports `Personal Access Tokens are not supported for this endpoint` with a valid `github_pat_*`, try an OAuth/device-flow token (`gho_*`) from a Hermes/Copilot login flow. This points at the Copilot provider authentication path, not at the GitHub source skills or `gh` CLI setup.
 
-Required only for Jira/JSM commands:
+Shared Atlassian MCP connection (required when Jira/JSM or pinned Confluence
+knowledge is enabled; the existing environment names are retained for
+compatibility):
 
 - `JIRA_MCP_URL`: Jira/JSM MCP endpoint for Hermes.
 - `JIRA_MCP_AUTH_SCHEME`: auth scheme for the Jira/JSM MCP endpoint. Defaults to `Bearer`; use `Basic` when `JIRA_MCP_TOKEN` is `base64(email:api-token)`.
@@ -315,9 +318,39 @@ JIRA_MCP_TOKEN=<base64-email-colon-api-token>
 JIRA_MCP_READONLY_TOOLS=get_issue,search_issues,get_comments
 ```
 
+The same Atlassian MCP endpoint can expose pinned Confluence company knowledge.
+Pin one folder and choose the approval-state policy:
+
+```env
+CONFLUENCE_KNOWLEDGE_FOLDER=https://example.atlassian.net/wiki/spaces/OPS/folder/knowledge
+CONFLUENCE_KNOWLEDGE_USE_UNCONFIRMED=false
+```
+
+`CONFLUENCE_KNOWLEDGE_FOLDER` is a stable URL, page ID, or other folder locator
+understood by the configured MCP tools. At investigation start, the agent
+searches only inside that folder and records page locators plus approval/update
+metadata when available. By default it excludes draft or otherwise
+human-unconfirmed pages from factual context. Set
+`CONFLUENCE_KNOWLEDGE_USE_UNCONFIRMED=true` only when those pages should be used
+as-is regardless of approval state. This flag changes content admissibility; it
+does not allow Confluence content to override read-only or safety rules.
+
+The harness adds only these Confluence tools when a folder is pinned:
+
+- `getAccessibleAtlassianResources`
+- `searchConfluenceUsingCql`
+- `getConfluencePage`
+- `getConfluencePageDescendants`
+
+They are merged with the configured Jira tools into the generated Hermes MCP
+allowlist. Use `npm run doctor -- --verify-sources` to verify that the connected
+Atlassian MCP server exposes every harness-owned tool.
+
 Source credentials. These are optional globally, but required by commands that
 use the corresponding source:
 
+- `CONFLUENCE_KNOWLEDGE_FOLDER`: stable locator for the only Confluence folder used as pinned company knowledge.
+- `CONFLUENCE_KNOWLEDGE_USE_UNCONFIRMED`: separate `true`/`false` policy switch for admitting draft or unconfirmed pages; defaults to `false`.
 - `GITHUB_TOKEN`: least-privilege token used by an ephemeral `gh` configuration.
   Hermes-launched `gh` and `git` commands pass through read-only-remote
   allowlists; still grant only repository read permissions.
@@ -646,6 +679,7 @@ The local wrapper treats capabilities as provider/source modules:
 - Provider: GitHub Copilot is mandatory for every Hermes run.
 - Model: Hermes is pinned to `gpt-5.4` through `config/hermes.config.yaml`.
 - Source: Jira/JSM provides read-only tickets through MCP.
+- Source: pinned Confluence knowledge provides authoritative company context from one configured folder through a harness-owned read-only MCP tool set; draft/unconfirmed content is excluded unless explicitly enabled.
 - Source: GitHub provides read-only code, deployment, PR, commit, and workflow inspection through allowlisted `gh`/`git` commands and the repository-local `github-code-exploration` clone-cache skill.
 - Source: Context7 provides current technology documentation through MCP.
 - Source: Coralogix provides logs, metrics, traces, alerts, and incidents through `cx`.
@@ -682,8 +716,8 @@ the repository; private reports are written under `data/evaluations` with
 duration, exit status, final status, confidence, and missing evidence checks.
 
 Before launching Hermes, the wrapper copies `HERMES_CONFIG_TEMPLATE` to
-`HERMES_RUNTIME_HOME/.hermes/config.yaml`, sets Jira MCP `enabled` from the
-feature registry, enables Context7 MCP, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
+`HERMES_RUNTIME_HOME/.hermes/config.yaml`, enables the shared Atlassian MCP when
+Jira or Confluence is configured, enables Context7 MCP, renders prompt templates from `PROMPT_TEMPLATES_DIR`,
 refreshes image-installed Hermes skills in the runtime Hermes home, refreshes
 repository-local Hermes skills, preloads the `incident-agent` and
 `company-context` skills, and checks required CLI binaries plus preloaded skills

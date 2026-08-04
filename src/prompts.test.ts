@@ -20,6 +20,8 @@ test("incident prompt phases render code grounding and source alignment contract
   assert.match(incidentTriagePrompt("JSM-123", config), /source join keys/);
   assert.match(incidentTriagePrompt("JSM-123", config), /competing hypotheses/);
   assert.match(incidentTriagePrompt("JSM-123", config), /discriminating evidence/);
+  assert.match(incidentTriagePrompt("JSM-123", config), /Confluence folder: https:\/\/example\.atlassian\.net\/wiki\/spaces\/OPS\/folder\/knowledge/);
+  assert.match(incidentTriagePrompt("JSM-123", config), /use only human-approved or confirmed pages/);
 
   const code = incidentCodePrompt("JSM-123", config, triageBrief, "data/investigations/JSM-123/run.jsonl");
   assert.match(code, /Phase 2: ground incident ticket JSM-123 in GitHub code/);
@@ -71,6 +73,15 @@ test("code unavailable brief preserves structured code contract for downstream e
   assert.match(brief, /Blocked phase: code/);
 });
 
+test("explicitly allows draft and unconfirmed pinned knowledge only when configured", () => {
+  const config = settings();
+  config.confluenceKnowledgeUseUnconfirmed = true;
+
+  const prompt = incidentTriagePrompt("JSM-123", config);
+  assert.match(prompt, /use pages as-is regardless of draft or unconfirmed state/);
+  assert.doesNotMatch(prompt, /exclude draft or unconfirmed pages/);
+});
+
 function settings(): Settings {
   return {
     features: {
@@ -79,6 +90,7 @@ function settings(): Settings {
       },
       sources: {
         jiraJsm: feature("source:jira-jsm", "source", "Jira/JSM"),
+        confluence: feature("source:confluence", "source", "Pinned Confluence knowledge"),
         github: feature("source:github", "source", "GitHub"),
         context7: feature("source:context7", "source", "Context7"),
         coralogix: feature("source:coralogix", "source", "Coralogix"),
@@ -103,6 +115,8 @@ function settings(): Settings {
     hermesLocalSkillsPath: "skills",
     repoCacheDir: "data/repos",
     schemaCachePath: "data/schema-cache.md",
+    confluenceKnowledgeFolder: "https://example.atlassian.net/wiki/spaces/OPS/folder/knowledge",
+    confluenceKnowledgeUseUnconfirmed: false,
     hermesTimeoutSeconds: 900,
     hermesIdleTimeoutSeconds: 300,
     hermesTerminateGraceSeconds: 10,

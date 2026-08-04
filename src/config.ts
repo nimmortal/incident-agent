@@ -19,6 +19,10 @@ const investigationReasoningEffortSchema = z.object({
   synthesis: reasoningEffortSchema,
 });
 
+const confluenceFolderSchema = z.string().refine((value) => !/[\r\n]/.test(value), {
+  message: "CONFLUENCE_KNOWLEDGE_FOLDER must be a single-line folder locator",
+});
+
 const settingsSchema = z.object({
   features: featureRegistrySchema,
   jiraProjectKey: z.string().min(1),
@@ -39,6 +43,8 @@ const settingsSchema = z.object({
   hermesLocalSkillsPath: z.string().min(1),
   repoCacheDir: z.string().min(1),
   schemaCachePath: z.string().min(1),
+  confluenceKnowledgeFolder: confluenceFolderSchema,
+  confluenceKnowledgeUseUnconfirmed: z.boolean(),
   hermesTimeoutSeconds: z.number().int().positive(),
   hermesIdleTimeoutSeconds: z.number().int().nonnegative(),
   hermesTerminateGraceSeconds: z.number().int().positive(),
@@ -76,6 +82,8 @@ export function loadSettings(): Settings {
     HERMES_LOCAL_SKILLS_PATH: str({ default: "skills" }),
     REPO_CACHE_DIR: str({ default: "data/repos" }),
     SCHEMA_CACHE_PATH: str({ default: "data/schema-cache.md" }),
+    CONFLUENCE_KNOWLEDGE_FOLDER: str({ default: "" }),
+    CONFLUENCE_KNOWLEDGE_USE_UNCONFIRMED: str({ default: "false", choices: ["true", "false"] }),
     HERMES_TIMEOUT_SECONDS: num({ default: 900 }),
     HERMES_IDLE_TIMEOUT_SECONDS: num({ default: 300 }),
     HERMES_TERMINATE_GRACE_SECONDS: num({ default: 10 }),
@@ -119,6 +127,8 @@ export function loadSettings(): Settings {
     hermesLocalSkillsPath: env.HERMES_LOCAL_SKILLS_PATH,
     repoCacheDir: env.REPO_CACHE_DIR,
     schemaCachePath: env.SCHEMA_CACHE_PATH,
+    confluenceKnowledgeFolder: env.CONFLUENCE_KNOWLEDGE_FOLDER.trim(),
+    confluenceKnowledgeUseUnconfirmed: env.CONFLUENCE_KNOWLEDGE_USE_UNCONFIRMED === "true",
     hermesTimeoutSeconds: env.HERMES_TIMEOUT_SECONDS,
     hermesIdleTimeoutSeconds: env.HERMES_IDLE_TIMEOUT_SECONDS,
     hermesTerminateGraceSeconds: env.HERMES_TERMINATE_GRACE_SECONDS,
