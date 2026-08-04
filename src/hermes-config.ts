@@ -13,6 +13,12 @@ export const confluenceKnowledgeReadOnlyTools = [
   "getConfluencePageDescendants",
 ] as const;
 
+export const defaultDelegationModel = "gpt-5.6-luna";
+
+export function delegationModel(env: NodeJS.ProcessEnv): string {
+  return env.HERMES_DELEGATION_MODEL?.trim() || defaultDelegationModel;
+}
+
 export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS.ProcessEnv> {
   assertSafeDelegationConfiguration(process.env);
   await withRuntimePreparationLock(settings, () => {
@@ -40,7 +46,7 @@ export async function buildHermesEnvironment(settings: Settings): Promise<NodeJS
     HERMES_DELEGATION_MAX_ASYNC_CHILDREN: process.env.HERMES_DELEGATION_MAX_ASYNC_CHILDREN || "2",
     HERMES_DELEGATION_MAX_SPAWN_DEPTH: process.env.HERMES_DELEGATION_MAX_SPAWN_DEPTH || "1",
     HERMES_DELEGATION_SUBAGENT_AUTO_APPROVE: "false",
-    HERMES_DELEGATION_MODEL: process.env.HERMES_DELEGATION_MODEL ?? "",
+    HERMES_DELEGATION_MODEL: delegationModel(process.env),
     HERMES_DELEGATION_PROVIDER: process.env.HERMES_DELEGATION_PROVIDER ?? "",
     HERMES_DELEGATION_REASONING_EFFORT: process.env.HERMES_DELEGATION_REASONING_EFFORT ?? "",
   };
